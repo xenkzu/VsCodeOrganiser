@@ -12,7 +12,14 @@ export async function activate(context: vscode.ExtensionContext) {
   const outputChannel = vscode.window.createOutputChannel('DSA Organizer');
   outputChannel.appendLine('DSA Organizer activated');
 
-  // 2. Instantiate the FileMover
+  // 2. Register organize command first
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dsa-organizer.organize', () => {
+      outputChannel.appendLine('Manual organize triggered');
+    })
+  );
+
+  // 3. Then instantiate mover (which registers its own commands)
   const mover = new FileMover(context, outputChannel);
   context.subscriptions.push(mover);
 
@@ -182,12 +189,6 @@ export async function activate(context: vscode.ExtensionContext) {
   // 3. Push watcher to context.subscriptions
   context.subscriptions.push(watcher, outputChannel);
 
-  // Register the organize command
-  const organizeCommand = vscode.commands.registerCommand('dsa-organizer.organize', () => {
-    vscode.window.showInformationMessage('DSA: Looking for disorganized files...');
-  });
-
-  context.subscriptions.push(organizeCommand);
 }
 
 export function deactivate() {

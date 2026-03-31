@@ -19,6 +19,14 @@
       {
         "command": "dsa-organizer.organize",
         "title": "DSA: Organize Workspace"
+      },
+      {
+        "command": "dsa-organizer.toggleEnabled",
+        "title": "DSA: Toggle Enabled"
+      },
+      {
+        "command": "dsa-organizer.undoLast",
+        "title": "DSA: Undo Last Move"
       }
     ],
     "configuration": {

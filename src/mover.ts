@@ -13,34 +13,53 @@ export class FileMover {
     private context: vscode.ExtensionContext,
     private outputChannel: vscode.OutputChannel
   ) {
-    // Item A — persistent toggle
+    // 1. Initialize undo stack first
+    this.undoStack = [];
+
+    // 2. Register commands BEFORE creating status bar items
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        'dsa-organizer.toggleEnabled',
+        async () => {
+          const config = vscode.workspace.getConfiguration('dsa-organizer');
+          const current = config.get<boolean>('enabled', true);
+          await config.update(
+            'enabled',
+            !current,
+            vscode.ConfigurationTarget.Workspace
+          );
+          this.updateToggleItem();
+        }
+      )
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        'dsa-organizer.undoLast',
+        async () => {
+          await this.undo();
+        }
+      )
+    );
+
+    // 3. Create toggle status bar item AFTER commands are registered
     this.toggleItem = vscode.window.createStatusBarItem(
-      vscode.StatusBarAlignment.Left, 100
+      vscode.StatusBarAlignment.Left,
+      100
     );
     this.toggleItem.command = 'dsa-organizer.toggleEnabled';
     this.updateToggleItem();
     this.toggleItem.show();
+    context.subscriptions.push(this.toggleItem);
 
-    // Item B — move notification
+    // 4. Create notification status bar item
     this.notifyItem = vscode.window.createStatusBarItem(
-      vscode.StatusBarAlignment.Left, 99
+      vscode.StatusBarAlignment.Left,
+      99
     );
     this.notifyItem.command = 'dsa-organizer.undoLast';
-
-    // Register commands
-    const toggleCmd = vscode.commands.registerCommand('dsa-organizer.toggleEnabled', async () => {
-      const config = vscode.workspace.getConfiguration('dsa-organizer');
-      const current = config.get<boolean>('enabled', true);
-      await config.update('enabled', !current, vscode.ConfigurationTarget.Workspace);
-      this.updateToggleItem();
-      this.outputChannel.appendLine(`DSA Organizer ${!current ? 'enabled' : 'disabled'}`);
-    });
-
-    const undoCmd = vscode.commands.registerCommand('dsa-organizer.undoLast', async () => {
-      await this.undo();
-    });
-
-    this.context.subscriptions.push(toggleCmd, undoCmd, this.toggleItem, this.notifyItem);
+    context.subscriptions.push(this.notifyItem);
+    // notifyItem starts hidden — shown only after a move
   }
 
   private updateToggleItem(): void {
