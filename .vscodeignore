@@ -1,0 +1,12 @@
+.vscode/**
+.vscode-test/**
+out/test/**
+src/**
+.gitignore
+.gitattributes
+.vscodeignore
+package-lock.json
+tsconfig.json
+README.md
+LICENSE
+node_modules/**

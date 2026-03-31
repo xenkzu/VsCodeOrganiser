@@ -1,0 +1,72 @@
+{
+  "name": "dsa-organizer",
+  "displayName": "DSA Workspace Organizer",
+  "description": "Automatically organizes your DSA files into topic-based folders.",
+  "version": "0.1.0",
+  "publisher": "your-publisher-name",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "dsa-organizer.organize",
+        "title": "DSA: Organize Workspace"
+      }
+    ],
+    "configuration": {
+      "title": "DSA Organizer",
+      "properties": {
+        "dsa-organizer.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable DSA Organizer."
+        },
+        "dsa-organizer.rootDir": {
+          "type": "string",
+          "default": "DSA",
+          "description": "Target root directory for organized files."
+        },
+        "dsa-organizer.confidenceThreshold": {
+          "type": "number",
+          "default": 0.75,
+          "description": "Minimum confidence required for automatic move."
+        },
+        "dsa-organizer.aiEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable AI-based classification."
+        },
+        "dsa-organizer.aiEndpoint": {
+          "type": "string",
+          "default": "",
+          "description": "Endpoint for AI classifier."
+        },
+        "dsa-organizer.debounceMs": {
+          "type": "number",
+          "default": 300,
+          "description": "Debounce time for file system events in milliseconds."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --platform=node",
+    "watch": "npm run compile -- --watch",
+    "pretest": "npm run compile",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.3.8",
+    "esbuild": "^0.19.11",
+    "typescript": "^5.3.3"
+  }
+}
