@@ -7,6 +7,7 @@ export async function classifyAI(signal: FileSignal, endpoint: string): Promise<
     subtopic: 'Miscellaneous',
     confidence: 0,
     source: 'ai',
-    targetPath: ''
+    targetPath: '',
+    userConfirmationRequired: false
   };
 }

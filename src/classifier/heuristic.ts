@@ -202,7 +202,8 @@ export function classifyHeuristic(signal: FileSignal): ClassificationResult[] {
         subtopic: descriptor.subtopic,
         confidence: totalScore,
         source: 'heuristic',
-        targetPath: `${rootDir}/${descriptor.folder}`
+        targetPath: `${rootDir}/${descriptor.folder}`,
+        userConfirmationRequired: false
       });
     }
   }
