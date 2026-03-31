@@ -34,8 +34,8 @@ __export(extension_exports, {
   deactivate: () => deactivate
 });
 module.exports = __toCommonJS(extension_exports);
-var vscode5 = __toESM(require("vscode"));
-var path2 = __toESM(require("path"));
+var vscode6 = __toESM(require("vscode"));
+var path3 = __toESM(require("path"));
 
 // src/watcher.ts
 var vscode = __toESM(require("vscode"));
@@ -587,23 +587,201 @@ function mergeResults(heuristic, rule) {
   return { ...topHeuristic, userConfirmationRequired: false };
 }
 
+// src/mover.ts
+var path2 = __toESM(require("path"));
+var fs2 = __toESM(require("fs"));
+var vscode5 = __toESM(require("vscode"));
+var FileMover = class {
+  constructor(context, outputChannel) {
+    this.context = context;
+    this.outputChannel = outputChannel;
+    this.undoStack = [];
+    this.MAX_UNDO = 20;
+    this.toggleItem = vscode5.window.createStatusBarItem(
+      vscode5.StatusBarAlignment.Left,
+      100
+    );
+    this.toggleItem.command = "dsa-organizer.toggleEnabled";
+    this.updateToggleItem();
+    this.toggleItem.show();
+    this.notifyItem = vscode5.window.createStatusBarItem(
+      vscode5.StatusBarAlignment.Left,
+      99
+    );
+    this.notifyItem.command = "dsa-organizer.undoLast";
+    const toggleCmd = vscode5.commands.registerCommand("dsa-organizer.toggleEnabled", async () => {
+      const config = vscode5.workspace.getConfiguration("dsa-organizer");
+      const current = config.get("enabled", true);
+      await config.update("enabled", !current, vscode5.ConfigurationTarget.Workspace);
+      this.updateToggleItem();
+      this.outputChannel.appendLine(`DSA Organizer ${!current ? "enabled" : "disabled"}`);
+    });
+    const undoCmd = vscode5.commands.registerCommand("dsa-organizer.undoLast", async () => {
+      await this.undo();
+    });
+    this.context.subscriptions.push(toggleCmd, undoCmd, this.toggleItem, this.notifyItem);
+  }
+  updateToggleItem() {
+    const enabled = vscode5.workspace.getConfiguration("dsa-organizer").get("enabled", true);
+    if (enabled) {
+      this.toggleItem.text = "$(folder-library) DSA: ON";
+      this.toggleItem.tooltip = "DSA Organizer is active \u2014 click to disable";
+      this.toggleItem.color = void 0;
+    } else {
+      this.toggleItem.text = "$(folder-library) DSA: OFF";
+      this.toggleItem.tooltip = "DSA Organizer is paused \u2014 click to enable";
+      this.toggleItem.color = new vscode5.ThemeColor("statusBarItem.warningForeground");
+    }
+  }
+  async move(signal, result) {
+    const enabled = vscode5.workspace.getConfiguration("dsa-organizer").get("enabled", true);
+    if (!enabled) {
+      return false;
+    }
+    const fileName = path2.basename(signal.filePath);
+    const workspaceRoot = vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+    let destDir = path2.join(workspaceRoot, result.targetPath);
+    let destPath = path2.join(destDir, fileName);
+    if (!workspaceRoot) {
+      this.outputChannel.appendLine("Move aborted: no workspace root found");
+      return false;
+    }
+    if (!fs2.existsSync(signal.filePath)) {
+      this.outputChannel.appendLine(`Move aborted: source file not found: ${signal.filePath}`);
+      return false;
+    }
+    if (signal.filePath === destPath) {
+      this.outputChannel.appendLine("Move aborted: file is already in the correct location");
+      return false;
+    }
+    if (!destDir.startsWith(workspaceRoot)) {
+      this.outputChannel.appendLine("Move aborted: destination is outside workspace");
+      return false;
+    }
+    if (fs2.existsSync(destPath)) {
+      const ext = path2.extname(fileName);
+      const base = path2.basename(fileName, ext);
+      let counter = 1;
+      while (fs2.existsSync(destPath)) {
+        destPath = path2.join(destDir, `${base}_${counter}${ext}`);
+        counter++;
+      }
+      this.outputChannel.appendLine(`  Name collision \u2014 renamed to: ${path2.basename(destPath)}`);
+    }
+    try {
+      fs2.mkdirSync(destDir, { recursive: true });
+    } catch (err) {
+      this.outputChannel.appendLine(`Move aborted: could not create directory: ${err}`);
+      return false;
+    }
+    try {
+      fs2.renameSync(signal.filePath, destPath);
+    } catch (err) {
+      try {
+        fs2.copyFileSync(signal.filePath, destPath);
+        fs2.unlinkSync(signal.filePath);
+      } catch (fallbackErr) {
+        this.outputChannel.appendLine(`Move failed: ${fallbackErr}`);
+        return false;
+      }
+    }
+    const record = {
+      originalPath: signal.filePath,
+      newPath: destPath,
+      timestamp: Date.now(),
+      result
+    };
+    this.undoStack.push(record);
+    if (this.undoStack.length > this.MAX_UNDO) {
+      this.undoStack.shift();
+    }
+    const historyDir = path2.join(workspaceRoot, ".dsa-organizer");
+    const historyPath = path2.join(historyDir, "history.json");
+    try {
+      fs2.mkdirSync(historyDir, { recursive: true });
+      let history = [];
+      if (fs2.existsSync(historyPath)) {
+        history = JSON.parse(fs2.readFileSync(historyPath, "utf8"));
+      }
+      history.push(record);
+      fs2.writeFileSync(historyPath, JSON.stringify(history, null, 2));
+    } catch (err) {
+      this.outputChannel.appendLine(`Warning: could not write history: ${err}`);
+    }
+    this.notifyItem.text = `$(file-symlink-file) Moved \u2192 ${result.topic}/${result.subtopic} $(undo)`;
+    this.notifyItem.tooltip = `${fileName} moved to ${result.targetPath}
+Click to undo`;
+    this.notifyItem.show();
+    setTimeout(() => {
+      this.notifyItem.hide();
+    }, 8e3);
+    this.outputChannel.appendLine(`  Moved: ${path2.basename(signal.filePath)} \u2192 ${destPath}`);
+    return true;
+  }
+  async undo() {
+    if (this.undoStack.length === 0) {
+      vscode5.window.showInformationMessage("DSA Organizer: nothing to undo");
+      return;
+    }
+    const record = this.undoStack.pop();
+    if (!fs2.existsSync(record.newPath)) {
+      vscode5.window.showWarningMessage(`Cannot undo: file no longer exists at ${record.newPath}`);
+      return;
+    }
+    const originalDir = path2.dirname(record.originalPath);
+    fs2.mkdirSync(originalDir, { recursive: true });
+    try {
+      fs2.renameSync(record.newPath, record.originalPath);
+    } catch {
+      try {
+        fs2.copyFileSync(record.newPath, record.originalPath);
+        fs2.unlinkSync(record.newPath);
+      } catch (err) {
+        vscode5.window.showErrorMessage(`Undo failed: ${err}`);
+        return;
+      }
+    }
+    try {
+      const destDir = path2.dirname(record.newPath);
+      const remaining = fs2.readdirSync(destDir);
+      if (remaining.length === 0) {
+        fs2.rmdirSync(destDir);
+      }
+    } catch {
+    }
+    this.notifyItem.text = `$(undo) Restored: ${path2.basename(record.originalPath)}`;
+    this.notifyItem.tooltip = `File restored to ${record.originalPath}`;
+    this.notifyItem.show();
+    setTimeout(() => this.notifyItem.hide(), 5e3);
+    this.outputChannel.appendLine(`  Undone: ${record.newPath} \u2192 ${record.originalPath}`);
+    vscode5.window.showInformationMessage(`Restored: ${path2.basename(record.originalPath)}`);
+  }
+  dispose() {
+    this.toggleItem.dispose();
+    this.notifyItem.dispose();
+    this.undoStack = [];
+  }
+};
+
 // src/extension.ts
 async function activate(context) {
-  const outputChannel = vscode5.window.createOutputChannel("DSA Organizer");
+  const outputChannel = vscode6.window.createOutputChannel("DSA Organizer");
   outputChannel.appendLine("DSA Organizer activated");
+  const mover = new FileMover(context, outputChannel);
+  context.subscriptions.push(mover);
   let organizerConfig = await loadRules(
-    vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath ?? ""
+    vscode6.workspace.workspaceFolders?.[0]?.uri.fsPath ?? ""
   );
-  const configWatcher = vscode5.workspace.createFileSystemWatcher("**/organizer.json");
+  const configWatcher = vscode6.workspace.createFileSystemWatcher("**/organizer.json");
   configWatcher.onDidChange(async () => {
     organizerConfig = await loadRules(
-      vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath ?? ""
+      vscode6.workspace.workspaceFolders?.[0]?.uri.fsPath ?? ""
     );
     outputChannel.appendLine("organizer.json reloaded");
   });
   configWatcher.onDidCreate(async () => {
     organizerConfig = await loadRules(
-      vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath ?? ""
+      vscode6.workspace.workspaceFolders?.[0]?.uri.fsPath ?? ""
     );
     outputChannel.appendLine("organizer.json loaded");
   });
@@ -632,8 +810,8 @@ async function activate(context) {
         "Arrays/SlidingWindow",
         "Skip this file"
       ];
-      const pick = await vscode5.window.showQuickPick(MANUAL_TOPICS, {
-        placeHolder: `No topic detected for "${path2.basename(signal.filePath)}" \u2014 pick manually or skip`
+      const pick = await vscode6.window.showQuickPick(MANUAL_TOPICS, {
+        placeHolder: `No topic detected for "${path3.basename(signal.filePath)}" \u2014 pick manually or skip`
       });
       if (!pick || pick === "Skip this file") {
         outputChannel.appendLine("  Skipped by user.");
@@ -641,7 +819,7 @@ async function activate(context) {
         return;
       }
       const parts = pick.split("/");
-      const rootDir = vscode5.workspace.getConfiguration("dsa-organizer").get("rootDir", "DSA");
+      const rootDir = vscode6.workspace.getConfiguration("dsa-organizer").get("rootDir", "DSA");
       const manualResult = {
         topic: parts[0],
         subtopic: parts[1] ?? "General",
@@ -650,12 +828,9 @@ async function activate(context) {
         targetPath: `${rootDir}/${pick}`,
         userConfirmationRequired: false
       };
-      const workspaceRoot = vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+      const workspaceRoot = vscode6.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
       await learnFromUserChoice(signal, manualResult, workspaceRoot);
-      outputChannel.appendLine(
-        `  Learned: ${manualResult.topic}/${manualResult.subtopic} saved to organizer.json`
-      );
-      outputChannel.show(true);
+      await mover.move(signal, manualResult);
       return;
     }
     outputChannel.appendLine(`  Source   : ${merged.source}`);
@@ -664,31 +839,77 @@ async function activate(context) {
     outputChannel.appendLine(`  Target   : ${merged.targetPath}`);
     outputChannel.appendLine(`  Needs confirmation: ${merged.userConfirmationRequired}`);
     if (merged.userConfirmationRequired) {
-      const topOptions = heuristicResults.slice(0, 3).map(
-        (r) => `${r.topic}/${r.subtopic} (${Math.round(r.confidence * 100)}%)`
-      );
-      const pick = await vscode5.window.showQuickPick(
-        [...topOptions, "Skip this file"],
-        { placeHolder: `Where should "${path2.basename(signal.filePath)}" go?` }
-      );
-      if (pick && pick !== "Skip this file") {
-        const chosen = heuristicResults.find(
-          (r) => pick.startsWith(`${r.topic}/${r.subtopic}`)
-        );
-        if (chosen) {
-          const workspaceRoot = vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
-          await learnFromUserChoice(signal, chosen, workspaceRoot);
-          outputChannel.appendLine(
-            `  Learned: ${chosen.topic}/${chosen.subtopic} saved to organizer.json`
-          );
+      const topOptions = heuristicResults.slice(0, 3).map((r) => ({
+        label: `$(folder) ${r.topic}/${r.subtopic}`,
+        description: `${Math.round(r.confidence * 100)}% confidence`,
+        detail: `\u2192 ${r.targetPath}`,
+        result: r
+      }));
+      const manualOptions = [
+        { label: "$(list-unordered) Browse all topics...", description: "", detail: "", result: null },
+        { label: "$(close) Skip this file", description: "", detail: "", result: null }
+      ];
+      const pick = await vscode6.window.showQuickPick(
+        [...topOptions, ...manualOptions],
+        {
+          placeHolder: `Where should "${path3.basename(signal.filePath)}" go?`,
+          matchOnDescription: true
         }
+      );
+      if (!pick || pick.label.includes("Skip")) {
+        outputChannel.appendLine("  Skipped by user.");
+        outputChannel.show(true);
+        return;
       }
+      if (pick.label.includes("Browse")) {
+        const MANUAL_TOPICS = [
+          "Trees/BinaryTree",
+          "Trees/BST",
+          "Trees/Trie",
+          "LinkedLists/Singly",
+          "Graphs/DFS",
+          "Graphs/BFS",
+          "DynamicProgramming/Memo",
+          "DynamicProgramming/Tabulation",
+          "Sorting",
+          "Heap",
+          "Backtracking",
+          "Arrays/SlidingWindow"
+        ];
+        const manualPick = await vscode6.window.showQuickPick(MANUAL_TOPICS, {
+          placeHolder: "Select destination folder"
+        });
+        if (!manualPick) {
+          return;
+        }
+        const parts = manualPick.split("/");
+        const rootDir = vscode6.workspace.getConfiguration("dsa-organizer").get("rootDir", "DSA");
+        const manualResult = {
+          topic: parts[0],
+          subtopic: parts[1] ?? "General",
+          confidence: 1,
+          source: "user",
+          targetPath: `${rootDir}/${manualPick}`,
+          userConfirmationRequired: false
+        };
+        const workspaceRoot = vscode6.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+        await learnFromUserChoice(signal, manualResult, workspaceRoot);
+        await mover.move(signal, manualResult);
+        return;
+      }
+      if (pick.result) {
+        const workspaceRoot = vscode6.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+        await learnFromUserChoice(signal, pick.result, workspaceRoot);
+        await mover.move(signal, pick.result);
+      }
+      return;
     }
+    await mover.move(signal, merged);
     outputChannel.show(true);
   });
   context.subscriptions.push(watcher, outputChannel);
-  const organizeCommand = vscode5.commands.registerCommand("dsa-organizer.organize", () => {
-    vscode5.window.showInformationMessage("DSA: Looking for disorganized files...");
+  const organizeCommand = vscode6.commands.registerCommand("dsa-organizer.organize", () => {
+    vscode6.window.showInformationMessage("DSA: Looking for disorganized files...");
   });
   context.subscriptions.push(organizeCommand);
 }

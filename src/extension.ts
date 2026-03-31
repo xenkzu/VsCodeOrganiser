@@ -4,12 +4,17 @@ import { FileWatcher } from './watcher';
 import { classifyHeuristic } from './classifier/heuristic';
 import { loadRules, classifyWithRules, learnFromUserChoice } from './classifier/rules';
 import { mergeResults } from './merger';
+import { FileMover } from './mover';
 import { OrganizerConfig, ClassificationResult } from './types';
 
 export async function activate(context: vscode.ExtensionContext) {
   // 1. Create an output channel
   const outputChannel = vscode.window.createOutputChannel('DSA Organizer');
   outputChannel.appendLine('DSA Organizer activated');
+
+  // 2. Instantiate the FileMover
+  const mover = new FileMover(context, outputChannel);
+  context.subscriptions.push(mover);
 
   // Load workspace rules once at activation
   let organizerConfig: OrganizerConfig | null = await loadRules(
@@ -32,7 +37,7 @@ export async function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(configWatcher);
 
-  // 2. Instantiate the FileWatcher
+  // 3. Instantiate the FileWatcher
   const watcher = new FileWatcher(context, outputChannel, async (signal) => {
     outputChannel.appendLine('── Signal captured ──');
     outputChannel.appendLine(JSON.stringify(signal, null, 2));
@@ -50,22 +55,15 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Step 4: log outcome
     outputChannel.appendLine('── Classification outcome ──');
+    
     if (!merged) {
       outputChannel.appendLine('  No classification found — prompting user.');
 
       const MANUAL_TOPICS = [
-        'Trees/BinaryTree',
-        'Trees/BST',
-        'Trees/Trie',
-        'LinkedLists/Singly',
-        'Graphs/DFS',
-        'Graphs/BFS',
-        'DynamicProgramming/Memo',
-        'DynamicProgramming/Tabulation',
-        'Sorting',
-        'Heap',
-        'Backtracking',
-        'Arrays/SlidingWindow',
+        'Trees/BinaryTree', 'Trees/BST', 'Trees/Trie',
+        'LinkedLists/Singly', 'Graphs/DFS', 'Graphs/BFS',
+        'DynamicProgramming/Memo', 'DynamicProgramming/Tabulation',
+        'Sorting', 'Heap', 'Backtracking', 'Arrays/SlidingWindow',
         'Skip this file'
       ];
 
@@ -79,7 +77,6 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      // Build a manual ClassificationResult from the picked string
       const parts = pick.split('/');
       const rootDir = vscode.workspace
         .getConfiguration('dsa-organizer')
@@ -94,13 +91,9 @@ export async function activate(context: vscode.ExtensionContext) {
         userConfirmationRequired: false
       };
 
-      const workspaceRoot =
-        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
       await learnFromUserChoice(signal, manualResult, workspaceRoot);
-      outputChannel.appendLine(
-        `  Learned: ${manualResult.topic}/${manualResult.subtopic} saved to organizer.json`
-      );
-      outputChannel.show(true);
+      await mover.move(signal, manualResult);
       return;
     }
 
@@ -112,27 +105,76 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Step 5: if user confirmation required, show quick pick placeholder
     if (merged.userConfirmationRequired) {
-      const topOptions = heuristicResults.slice(0, 3).map(r => 
-        `${r.topic}/${r.subtopic} (${Math.round(r.confidence * 100)}%)`
-      );
+      // Build quick pick from top heuristic candidates
+      const topOptions = heuristicResults.slice(0, 3).map(r => ({
+        label: `$(folder) ${r.topic}/${r.subtopic}`,
+        description: `${Math.round(r.confidence * 100)}% confidence`,
+        detail: `→ ${r.targetPath}`,
+        result: r
+      }));
+
+      const manualOptions = [
+        { label: '$(list-unordered) Browse all topics...', description: '', detail: '', result: null },
+        { label: '$(close) Skip this file', description: '', detail: '', result: null }
+      ];
+
       const pick = await vscode.window.showQuickPick(
-        [...topOptions, 'Skip this file'],
-        { placeHolder: `Where should "${path.basename(signal.filePath)}" go?` }
+        [...topOptions, ...manualOptions],
+        {
+          placeHolder: `Where should "${path.basename(signal.filePath)}" go?`,
+          matchOnDescription: true
+        }
       );
 
-      if (pick && pick !== 'Skip this file') {
-        const chosen = heuristicResults.find(r => 
-          pick.startsWith(`${r.topic}/${r.subtopic}`)
-        );
-        if (chosen) {
-          const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-          await learnFromUserChoice(signal, chosen, workspaceRoot);
-          outputChannel.appendLine(
-            `  Learned: ${chosen.topic}/${chosen.subtopic} saved to organizer.json`
-          );
-        }
+      if (!pick || pick.label.includes('Skip')) {
+        outputChannel.appendLine('  Skipped by user.');
+        outputChannel.show(true);
+        return;
       }
+
+      if (pick.label.includes('Browse')) {
+        const MANUAL_TOPICS = [
+          'Trees/BinaryTree', 'Trees/BST', 'Trees/Trie',
+          'LinkedLists/Singly', 'Graphs/DFS', 'Graphs/BFS',
+          'DynamicProgramming/Memo', 'DynamicProgramming/Tabulation',
+          'Sorting', 'Heap', 'Backtracking', 'Arrays/SlidingWindow'
+        ];
+        const manualPick = await vscode.window.showQuickPick(MANUAL_TOPICS, {
+          placeHolder: 'Select destination folder'
+        });
+        if (!manualPick) { return; }
+
+        const parts = manualPick.split('/');
+        const rootDir = vscode.workspace
+          .getConfiguration('dsa-organizer')
+          .get<string>('rootDir', 'DSA');
+
+        const manualResult: ClassificationResult = {
+          topic: parts[0],
+          subtopic: parts[1] ?? 'General',
+          confidence: 1.0,
+          source: 'user',
+          targetPath: `${rootDir}/${manualPick}`,
+          userConfirmationRequired: false
+        };
+
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+        await learnFromUserChoice(signal, manualResult, workspaceRoot);
+        await mover.move(signal, manualResult);
+        return;
+      }
+
+      // User picked one of the top heuristic suggestions
+      if (pick.result) {
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+        await learnFromUserChoice(signal, pick.result, workspaceRoot);
+        await mover.move(signal, pick.result);
+      }
+      return;
     }
+
+    // High confidence — move automatically
+    await mover.move(signal, merged);
 
     outputChannel.show(true);
   });
