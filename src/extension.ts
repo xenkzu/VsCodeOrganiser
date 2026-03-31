@@ -4,7 +4,7 @@ import { FileWatcher } from './watcher';
 import { classifyHeuristic } from './classifier/heuristic';
 import { loadRules, classifyWithRules, learnFromUserChoice } from './classifier/rules';
 import { mergeResults } from './merger';
-import { OrganizerConfig } from './types';
+import { OrganizerConfig, ClassificationResult } from './types';
 
 export async function activate(context: vscode.ExtensionContext) {
   // 1. Create an output channel
@@ -51,7 +51,55 @@ export async function activate(context: vscode.ExtensionContext) {
     // Step 4: log outcome
     outputChannel.appendLine('── Classification outcome ──');
     if (!merged) {
-      outputChannel.appendLine('  No classification found.');
+      outputChannel.appendLine('  No classification found — prompting user.');
+
+      const MANUAL_TOPICS = [
+        'Trees/BinaryTree',
+        'Trees/BST',
+        'Trees/Trie',
+        'LinkedLists/Singly',
+        'Graphs/DFS',
+        'Graphs/BFS',
+        'DynamicProgramming/Memo',
+        'DynamicProgramming/Tabulation',
+        'Sorting',
+        'Heap',
+        'Backtracking',
+        'Arrays/SlidingWindow',
+        'Skip this file'
+      ];
+
+      const pick = await vscode.window.showQuickPick(MANUAL_TOPICS, {
+        placeHolder: `No topic detected for "${path.basename(signal.filePath)}" — pick manually or skip`
+      });
+
+      if (!pick || pick === 'Skip this file') {
+        outputChannel.appendLine('  Skipped by user.');
+        outputChannel.show(true);
+        return;
+      }
+
+      // Build a manual ClassificationResult from the picked string
+      const parts = pick.split('/');
+      const rootDir = vscode.workspace
+        .getConfiguration('dsa-organizer')
+        .get<string>('rootDir', 'DSA');
+
+      const manualResult: ClassificationResult = {
+        topic: parts[0],
+        subtopic: parts[1] ?? 'General',
+        confidence: 1.0,
+        source: 'user',
+        targetPath: `${rootDir}/${pick}`,
+        userConfirmationRequired: false
+      };
+
+      const workspaceRoot =
+        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+      await learnFromUserChoice(signal, manualResult, workspaceRoot);
+      outputChannel.appendLine(
+        `  Learned: ${manualResult.topic}/${manualResult.subtopic} saved to organizer.json`
+      );
       outputChannel.show(true);
       return;
     }

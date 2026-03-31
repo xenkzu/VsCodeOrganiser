@@ -147,6 +147,8 @@ export function classifyHeuristic(signal: FileSignal): ClassificationResult[] {
     let totalScore = 0;
 
     for (const rule of descriptor.rules) {
+      if (totalScore >= 1.0) break;
+
       let matched = false;
 
       // 1. Determine which fields to search
@@ -193,14 +195,14 @@ export function classifyHeuristic(signal: FileSignal): ClassificationResult[] {
         if (anyPresent) continue;
       }
 
-      totalScore += rule.weight;
+      totalScore = Math.min(1.0, totalScore + rule.weight);
     }
 
     if (totalScore > 0.20) {
       results.push({
         topic: descriptor.topic,
         subtopic: descriptor.subtopic,
-        confidence: totalScore,
+        confidence: Math.min(1.0, totalScore),
         source: 'heuristic',
         targetPath: `${rootDir}/${descriptor.folder}`,
         userConfirmationRequired: false

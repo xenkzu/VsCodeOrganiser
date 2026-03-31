@@ -34,7 +34,8 @@ __export(extension_exports, {
   deactivate: () => deactivate
 });
 module.exports = __toCommonJS(extension_exports);
-var vscode2 = __toESM(require("vscode"));
+var vscode5 = __toESM(require("vscode"));
+var path2 = __toESM(require("path"));
 
 // src/watcher.ts
 var vscode = __toESM(require("vscode"));
@@ -228,18 +229,466 @@ var FileWatcher = class extends vscode.Disposable {
   }
 };
 
+// src/classifier/heuristic.ts
+var vscode2 = __toESM(require("vscode"));
+var TOPICS = [
+  {
+    topic: "Trees",
+    subtopic: "BinaryTree",
+    folder: "Trees/BinaryTree",
+    rules: [
+      { fields: ["classNames"], match: ["TreeNode", "BinaryTree", "BTNode"], weight: 0.9 },
+      { fields: ["variableNames"], match: ["left", "right"], requireAll: ["left", "right"], weight: 0.85 },
+      { fields: ["methodNames"], match: ["inorder", "preorder", "postorder", "levelOrder", "levelorder"], weight: 0.8 },
+      { fields: ["variableNames"], match: ["root"], weight: 0.35 }
+    ]
+  },
+  {
+    topic: "Trees",
+    subtopic: "BST",
+    folder: "Trees/BST",
+    rules: [
+      { fields: ["classNames"], match: ["BST", "BinarySearchTree", "bst"], weight: 0.95 },
+      { fields: ["methodNames"], match: ["insert", "search", "delete"], requireAll: ["root"], weight: 0.75 }
+    ]
+  },
+  {
+    topic: "Trees",
+    subtopic: "Trie",
+    folder: "Trees/Trie",
+    rules: [
+      { fields: ["classNames"], match: ["Trie", "TrieNode"], weight: 0.95 },
+      { fields: ["variableNames", "methodNames"], match: ["children", "insert"], requireAll: ["children"], weight: 0.8 }
+    ]
+  },
+  {
+    topic: "LinkedLists",
+    subtopic: "SinglyLinked",
+    folder: "LinkedLists/Singly",
+    rules: [
+      { fields: ["classNames"], match: ["ListNode", "LinkedList", "SinglyLinked"], weight: 0.85 },
+      { fields: ["classNames"], match: ["Node"], excludeIf: ["left", "right"], weight: 0.8 },
+      { fields: ["variableNames"], match: ["next"], excludeIf: ["left", "right"], weight: 0.6 },
+      { fields: ["methodNames"], match: ["reverseList", "addAtHead", "deleteNode", "reverse"], weight: 0.8 }
+    ]
+  },
+  {
+    topic: "Graphs",
+    subtopic: "DFS",
+    folder: "Graphs/DFS",
+    rules: [
+      { fields: ["methodNames"], match: ["dfs", "depthFirstSearch"], weight: 0.9 },
+      { fields: ["variableNames"], match: ["visited", "adj"], requireAll: ["visited", "adj"], weight: 0.85 },
+      { fields: ["imports"], match: ["defaultdict"], weight: 0.25 }
+    ]
+  },
+  {
+    topic: "Graphs",
+    subtopic: "BFS",
+    folder: "Graphs/BFS",
+    rules: [
+      { fields: ["methodNames"], match: ["bfs", "breadthFirstSearch"], weight: 0.9 },
+      { fields: ["variableNames"], match: ["queue", "visited"], requireAll: ["queue", "visited"], weight: 0.8 },
+      { fields: ["imports"], match: ["deque", "Queue", "ArrayDeque"], weight: 0.35 }
+    ]
+  },
+  {
+    topic: "DynamicProgramming",
+    subtopic: "Memoization",
+    folder: "DynamicProgramming/Memo",
+    rules: [
+      { fields: ["variableNames"], match: ["memo"], weight: 0.85 },
+      { fields: ["imports"], match: ["lru_cache", "functools"], weight: 0.7 },
+      { fields: [], match: [], rawContains: "@lru_cache", weight: 0.9 },
+      { fields: [], match: [], rawContains: "@cache", weight: 0.85 }
+    ]
+  },
+  {
+    topic: "DynamicProgramming",
+    subtopic: "Tabulation",
+    folder: "DynamicProgramming/Tabulation",
+    rules: [
+      { fields: ["variableNames"], match: ["dp"], weight: 0.8 },
+      { fields: [], match: [], rawRegex: "for.{0,40}dp\\[", weight: 0.7 },
+      { fields: [], match: [], rawRegex: "dp\\s*=\\s*\\[", weight: 0.55 }
+    ]
+  },
+  {
+    topic: "Sorting",
+    subtopic: "General",
+    folder: "Sorting",
+    rules: [
+      { fields: ["methodNames"], match: ["quickSort", "mergeSort", "heapSort", "bubbleSort", "quicksort", "mergesort", "partition", "merge"], weight: 0.9 }
+    ]
+  },
+  {
+    topic: "Heap",
+    subtopic: "General",
+    folder: "Heap",
+    rules: [
+      { fields: ["classNames"], match: ["MinHeap", "MaxHeap", "Heap", "PriorityQueue"], weight: 0.9 },
+      { fields: ["methodNames"], match: ["heapify", "heappush", "heappop", "siftDown", "siftUp", "sift_down", "sift_up"], weight: 0.85 },
+      { fields: ["variableNames"], match: ["heap"], weight: 0.55 }
+    ]
+  },
+  {
+    topic: "Backtracking",
+    subtopic: "General",
+    folder: "Backtracking",
+    rules: [
+      { fields: ["methodNames"], match: ["backtrack", "solve", "permute", "permutation", "combinations", "combinationSum"], weight: 0.85 },
+      { fields: [], match: [], rawContains: "backtrack", weight: 0.7 }
+    ]
+  },
+  {
+    topic: "Arrays",
+    subtopic: "SlidingWindow",
+    folder: "Arrays/SlidingWindow",
+    rules: [
+      { fields: ["variableNames"], match: ["left", "right"], requireAll: ["left", "right"], excludeIf: ["root", "children", "parent"], weight: 0.6 },
+      { fields: ["methodNames"], match: ["maxSubarray", "longestSubstring", "minWindow", "slidingWindow", "maxWindow"], weight: 0.9 }
+    ]
+  }
+];
+function classifyHeuristic(signal) {
+  let results = [];
+  const config = vscode2.workspace.getConfiguration("dsa-organizer");
+  const rootDir = config.get("rootDir", "DSA");
+  for (const descriptor of TOPICS) {
+    let totalScore = 0;
+    for (const rule of descriptor.rules) {
+      if (totalScore >= 1)
+        break;
+      let matched = false;
+      const haystack = [];
+      for (const field of rule.fields) {
+        const val = signal[field];
+        if (Array.isArray(val)) {
+          haystack.push(...val);
+        } else if (typeof val === "string") {
+          haystack.push(val);
+        }
+      }
+      if (rule.match.length > 0) {
+        matched = rule.match.some((m) => haystack.some((h) => h.toLowerCase().includes(m.toLowerCase())));
+      }
+      if (rule.rawContains) {
+        matched = signal.rawSnippet.includes(rule.rawContains);
+      }
+      if (rule.rawRegex) {
+        matched = new RegExp(rule.rawRegex, "i").test(signal.rawSnippet);
+      }
+      if (!matched)
+        continue;
+      if (rule.requireAll) {
+        const allPresent = rule.requireAll.every(
+          (req) => signal.variableNames.some((v) => v.toLowerCase().includes(req.toLowerCase()))
+        );
+        if (!allPresent)
+          continue;
+      }
+      if (rule.excludeIf) {
+        const anyPresent = rule.excludeIf.some(
+          (ex) => signal.variableNames.some((v) => v.toLowerCase().includes(ex.toLowerCase()))
+        );
+        if (anyPresent)
+          continue;
+      }
+      totalScore = Math.min(1, totalScore + rule.weight);
+    }
+    if (totalScore > 0.2) {
+      results.push({
+        topic: descriptor.topic,
+        subtopic: descriptor.subtopic,
+        confidence: Math.min(1, totalScore),
+        source: "heuristic",
+        targetPath: `${rootDir}/${descriptor.folder}`,
+        userConfirmationRequired: false
+      });
+    }
+  }
+  const btResult = results.find((r) => r.subtopic === "BinaryTree");
+  const llResult = results.find((r) => r.subtopic === "SinglyLinked");
+  if (btResult && llResult) {
+    const hasLeft = signal.variableNames.includes("left");
+    const hasRight = signal.variableNames.includes("right");
+    const hasNext = signal.variableNames.includes("next");
+    if (hasLeft && hasRight && !hasNext) {
+      btResult.confidence = Math.min(1, btResult.confidence + 0.2);
+      llResult.confidence = Math.max(0, llResult.confidence - 0.2);
+    } else if (hasNext && !hasLeft && !hasRight) {
+      llResult.confidence = Math.min(1, llResult.confidence + 0.2);
+      btResult.confidence = Math.max(0, btResult.confidence - 0.2);
+    }
+  }
+  results.sort((a, b) => b.confidence - a.confidence);
+  return results.filter((r) => r.confidence > 0.2);
+}
+
+// src/classifier/rules.ts
+var path = __toESM(require("path"));
+var fs = __toESM(require("fs"));
+var vscode3 = __toESM(require("vscode"));
+async function loadRules(workspaceRoot) {
+  const configPath = path.join(workspaceRoot, "organizer.json");
+  if (!fs.existsSync(configPath)) {
+    return null;
+  }
+  try {
+    const raw = fs.readFileSync(configPath, "utf8");
+    const parsed = JSON.parse(raw);
+    if (parsed.version !== 1 || !Array.isArray(parsed.rules)) {
+      console.warn("organizer.json validation failed: version must be 1, rules must be an array.");
+      return null;
+    }
+    return {
+      version: parsed.version,
+      rules: parsed.rules,
+      learned: Array.isArray(parsed.learned) ? parsed.learned : []
+    };
+  } catch (err) {
+    console.warn("Failed to parse organizer.json:", err);
+    return null;
+  }
+}
+function classifyWithRules(signal, config) {
+  const rootDir = vscode3.workspace.getConfiguration("dsa-organizer").get("rootDir", "DSA");
+  const sortedRules = [...config.rules].sort((a, b) => b.priority - a.priority);
+  for (const rule of sortedRules) {
+    const results = [];
+    if (rule.conditions.fileNameContains) {
+      const fileName = path.basename(signal.filePath).toLowerCase();
+      results.push(fileName.includes(rule.conditions.fileNameContains.toLowerCase()));
+    }
+    if (rule.conditions.classNameContains) {
+      const value = rule.conditions.classNameContains.toLowerCase();
+      results.push(signal.classNames.some((c) => c.toLowerCase().includes(value)));
+    }
+    if (rule.conditions.methodNameContains) {
+      const value = rule.conditions.methodNameContains.toLowerCase();
+      results.push(signal.methodNames.some((m) => m.toLowerCase().includes(value)));
+    }
+    if (rule.conditions.importContains) {
+      const value = rule.conditions.importContains.toLowerCase();
+      results.push(signal.imports.some((i) => i.toLowerCase().includes(value)));
+    }
+    if (rule.conditions.rawSnippetContains) {
+      results.push(signal.rawSnippet.includes(rule.conditions.rawSnippetContains));
+    }
+    if (results.length === 0)
+      continue;
+    const matched = rule.matchMode === "all" ? results.every((res) => res) : results.some((res) => res);
+    if (matched) {
+      return {
+        topic: rule.target.topic,
+        subtopic: rule.target.subtopic,
+        confidence: 1,
+        source: "rules",
+        targetPath: `${rootDir}/${rule.target.folder}`,
+        userConfirmationRequired: false
+      };
+    }
+  }
+  for (const entry of config.learned) {
+    let match = false;
+    if (entry.pattern.classNames && entry.pattern.classNames.length > 0 && signal.classNames.length > 0) {
+      const pNames = entry.pattern.classNames;
+      const intersection = signal.classNames.filter(
+        (c) => pNames.some((p) => p.toLowerCase() === c.toLowerCase())
+      );
+      const overlapRatio = intersection.length / pNames.length;
+      if (overlapRatio >= 0.5)
+        match = true;
+    }
+    if (!match && entry.pattern.methodNames && entry.pattern.methodNames.length > 0 && signal.methodNames.length > 0) {
+      const pMethods = entry.pattern.methodNames;
+      const intersection = signal.methodNames.filter(
+        (m) => pMethods.some((p) => p.toLowerCase() === m.toLowerCase())
+      );
+      const overlapRatio = intersection.length / pMethods.length;
+      if (overlapRatio >= 0.5)
+        match = true;
+    }
+    if (match) {
+      return {
+        topic: entry.target.topic,
+        subtopic: entry.target.subtopic,
+        confidence: 0.85,
+        source: "rules",
+        targetPath: `${rootDir}/${entry.target.folder}`,
+        userConfirmationRequired: false
+      };
+    }
+  }
+  return null;
+}
+async function learnFromUserChoice(signal, chosen, workspaceRoot) {
+  const configPath = path.join(workspaceRoot, "organizer.json");
+  const rootDir = vscode3.workspace.getConfiguration("dsa-organizer").get("rootDir", "DSA");
+  let config;
+  try {
+    if (fs.existsSync(configPath)) {
+      const raw = fs.readFileSync(configPath, "utf8");
+      config = JSON.parse(raw);
+    } else {
+      config = { version: 1, rules: [], learned: [] };
+    }
+  } catch (err) {
+    console.warn("Error loading config for learning:", err);
+    config = { version: 1, rules: [], learned: [] };
+  }
+  const targetFolder = chosen.targetPath.startsWith(`${rootDir}/`) ? chosen.targetPath.substring(`${rootDir}/`.length) : chosen.targetPath;
+  const newPattern = {
+    pattern: {
+      classNames: signal.classNames.length > 0 ? [...signal.classNames] : void 0,
+      methodNames: signal.methodNames.length > 0 ? [...signal.methodNames] : void 0
+    },
+    target: {
+      topic: chosen.topic,
+      subtopic: chosen.subtopic,
+      folder: targetFolder
+    },
+    timesApplied: 1
+  };
+  const existingEntry = config.learned.find(
+    (entry) => entry.target.topic === chosen.topic && entry.target.subtopic === chosen.subtopic && (entry.pattern.classNames && newPattern.pattern.classNames && entry.pattern.classNames.some((c) => newPattern.pattern.classNames.includes(c)) || !entry.pattern.classNames && !newPattern.pattern.classNames)
+  );
+  if (existingEntry) {
+    existingEntry.timesApplied += 1;
+    if (newPattern.pattern.classNames) {
+      existingEntry.pattern.classNames = Array.from(/* @__PURE__ */ new Set([...existingEntry.pattern.classNames || [], ...newPattern.pattern.classNames]));
+    }
+  } else {
+    config.learned.push(newPattern);
+  }
+  try {
+    const tmpPath = configPath + ".tmp";
+    fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), "utf8");
+    fs.renameSync(tmpPath, configPath);
+  } catch (err) {
+    console.warn("Atomic write failed for organizer.json:", err);
+  }
+}
+
+// src/merger.ts
+var vscode4 = __toESM(require("vscode"));
+function mergeResults(heuristic, rule) {
+  if (rule) {
+    return { ...rule, confidence: 1, userConfirmationRequired: false };
+  }
+  if (heuristic.length === 0) {
+    return null;
+  }
+  const topHeuristic = heuristic[0];
+  const threshold = vscode4.workspace.getConfiguration("dsa-organizer").get("confidenceThreshold", 0.75);
+  if (topHeuristic.confidence < threshold) {
+    return { ...topHeuristic, userConfirmationRequired: true };
+  }
+  return { ...topHeuristic, userConfirmationRequired: false };
+}
+
 // src/extension.ts
-function activate(context) {
-  const outputChannel = vscode2.window.createOutputChannel("DSA Organizer");
+async function activate(context) {
+  const outputChannel = vscode5.window.createOutputChannel("DSA Organizer");
   outputChannel.appendLine("DSA Organizer activated");
-  const watcher = new FileWatcher(context, outputChannel, (signal) => {
+  let organizerConfig = await loadRules(
+    vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath ?? ""
+  );
+  const configWatcher = vscode5.workspace.createFileSystemWatcher("**/organizer.json");
+  configWatcher.onDidChange(async () => {
+    organizerConfig = await loadRules(
+      vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath ?? ""
+    );
+    outputChannel.appendLine("organizer.json reloaded");
+  });
+  configWatcher.onDidCreate(async () => {
+    organizerConfig = await loadRules(
+      vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath ?? ""
+    );
+    outputChannel.appendLine("organizer.json loaded");
+  });
+  context.subscriptions.push(configWatcher);
+  const watcher = new FileWatcher(context, outputChannel, async (signal) => {
     outputChannel.appendLine("\u2500\u2500 Signal captured \u2500\u2500");
     outputChannel.appendLine(JSON.stringify(signal, null, 2));
+    const heuristicResults = classifyHeuristic(signal);
+    const ruleResult = organizerConfig ? classifyWithRules(signal, organizerConfig) : null;
+    const merged = mergeResults(heuristicResults, ruleResult);
+    outputChannel.appendLine("\u2500\u2500 Classification outcome \u2500\u2500");
+    if (!merged) {
+      outputChannel.appendLine("  No classification found \u2014 prompting user.");
+      const MANUAL_TOPICS = [
+        "Trees/BinaryTree",
+        "Trees/BST",
+        "Trees/Trie",
+        "LinkedLists/Singly",
+        "Graphs/DFS",
+        "Graphs/BFS",
+        "DynamicProgramming/Memo",
+        "DynamicProgramming/Tabulation",
+        "Sorting",
+        "Heap",
+        "Backtracking",
+        "Arrays/SlidingWindow",
+        "Skip this file"
+      ];
+      const pick = await vscode5.window.showQuickPick(MANUAL_TOPICS, {
+        placeHolder: `No topic detected for "${path2.basename(signal.filePath)}" \u2014 pick manually or skip`
+      });
+      if (!pick || pick === "Skip this file") {
+        outputChannel.appendLine("  Skipped by user.");
+        outputChannel.show(true);
+        return;
+      }
+      const parts = pick.split("/");
+      const rootDir = vscode5.workspace.getConfiguration("dsa-organizer").get("rootDir", "DSA");
+      const manualResult = {
+        topic: parts[0],
+        subtopic: parts[1] ?? "General",
+        confidence: 1,
+        source: "user",
+        targetPath: `${rootDir}/${pick}`,
+        userConfirmationRequired: false
+      };
+      const workspaceRoot = vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+      await learnFromUserChoice(signal, manualResult, workspaceRoot);
+      outputChannel.appendLine(
+        `  Learned: ${manualResult.topic}/${manualResult.subtopic} saved to organizer.json`
+      );
+      outputChannel.show(true);
+      return;
+    }
+    outputChannel.appendLine(`  Source   : ${merged.source}`);
+    outputChannel.appendLine(`  Result   : ${merged.topic}/${merged.subtopic}`);
+    outputChannel.appendLine(`  Confidence: ${Math.round(merged.confidence * 100)}%`);
+    outputChannel.appendLine(`  Target   : ${merged.targetPath}`);
+    outputChannel.appendLine(`  Needs confirmation: ${merged.userConfirmationRequired}`);
+    if (merged.userConfirmationRequired) {
+      const topOptions = heuristicResults.slice(0, 3).map(
+        (r) => `${r.topic}/${r.subtopic} (${Math.round(r.confidence * 100)}%)`
+      );
+      const pick = await vscode5.window.showQuickPick(
+        [...topOptions, "Skip this file"],
+        { placeHolder: `Where should "${path2.basename(signal.filePath)}" go?` }
+      );
+      if (pick && pick !== "Skip this file") {
+        const chosen = heuristicResults.find(
+          (r) => pick.startsWith(`${r.topic}/${r.subtopic}`)
+        );
+        if (chosen) {
+          const workspaceRoot = vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+          await learnFromUserChoice(signal, chosen, workspaceRoot);
+          outputChannel.appendLine(
+            `  Learned: ${chosen.topic}/${chosen.subtopic} saved to organizer.json`
+          );
+        }
+      }
+    }
     outputChannel.show(true);
   });
   context.subscriptions.push(watcher, outputChannel);
-  const organizeCommand = vscode2.commands.registerCommand("dsa-organizer.organize", () => {
-    vscode2.window.showInformationMessage("DSA: Organizing Workspace...");
+  const organizeCommand = vscode5.commands.registerCommand("dsa-organizer.organize", () => {
+    vscode5.window.showInformationMessage("DSA: Looking for disorganized files...");
   });
   context.subscriptions.push(organizeCommand);
 }
