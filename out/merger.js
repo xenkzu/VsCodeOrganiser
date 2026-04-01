@@ -41,22 +41,23 @@ async function mergeResults(heuristic, rule, signal, outputChannel) {
     if (rule) {
         return { ...rule, confidence: 1.0, userConfirmationRequired: false };
     }
-    // Nothing from heuristic at all
-    if (heuristic.length === 0) {
-        return null;
-    }
-    const topHeuristic = heuristic[0];
-    const threshold = vscode.workspace
-        .getConfiguration('nette')
-        .get('confidenceThreshold', 0.75);
-    if (topHeuristic.confidence < threshold) {
-        // Try AI before giving up
+    const config = vscode.workspace.getConfiguration('nette');
+    const threshold = config.get('confidenceThreshold', 0.75);
+    const topHeuristic = heuristic.length > 0 ? heuristic[0] : null;
+    // If heuristic is low confidence OR empty, trigger AI fallback
+    if (!topHeuristic || topHeuristic.confidence < threshold) {
         const aiResult = await (0, ai_1.classifyWithAI)(signal, outputChannel);
         if (aiResult) {
             return aiResult;
         }
-        // AI unavailable or failed — fall back to heuristic with confirmation flag
-        return { ...topHeuristic, userConfirmationRequired: true };
+        // AI unavailable or failed
+        if (topHeuristic) {
+            // Return low-confidence heuristic with confirmation flag
+            return { ...topHeuristic, userConfirmationRequired: true };
+        }
+        // Nothing from heuristic, nothing from AI -> manual choice required
+        return null;
     }
+    // High confidence heuristic
     return { ...topHeuristic, userConfirmationRequired: false };
 }

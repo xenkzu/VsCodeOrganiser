@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { FileSignal, ClassificationResult } from '../types';
 
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL    = 'llama-3.1-8b-instant';
+const GROQ_MODEL = 'llama-3.1-8b-instant';
 
 // These must exactly match the folderMap keys in organizer.json
 // so the AI result routes to the correct existing folder
@@ -57,7 +57,7 @@ function parseGroqResponse(
 
     const topic: ValidTopic =
       typeof parsed.topic === 'string' &&
-      VALID_TOPICS.includes(parsed.topic as ValidTopic)
+        VALID_TOPICS.includes(parsed.topic as ValidTopic)
         ? (parsed.topic as ValidTopic)
         : 'Other';
 
@@ -68,8 +68,8 @@ function parseGroqResponse(
 
     const confidence: number =
       typeof parsed.confidence === 'number' &&
-      parsed.confidence >= 0 &&
-      parsed.confidence <= 1
+        parsed.confidence >= 0 &&
+        parsed.confidence <= 1
         ? parsed.confidence
         : 0.5;
 
@@ -86,8 +86,8 @@ export async function classifyWithAI(
 ): Promise<ClassificationResult | null> {
 
   // Read settings
-  const config     = vscode.workspace.getConfiguration('nette');
-  const aiEnabled  = config.get<boolean>('aiEnabled', false);
+  const config = vscode.workspace.getConfiguration('nette');
+  const aiEnabled = config.get<boolean>('aiEnabled', true);
   const groqApiKey = config.get<string>('groqApiKey', '').trim();
 
   if (!aiEnabled) {
@@ -95,10 +95,7 @@ export async function classifyWithAI(
   }
 
   if (!groqApiKey) {
-    outputChannel.appendLine(
-      '[Nette AI] Skipped: nette.groqApiKey is not set. ' +
-      'Add your Groq API key in VS Code settings.'
-    );
+    promptForKeyOnce(outputChannel);
     return null;
   }
 
@@ -149,7 +146,7 @@ Respond with ONLY this JSON object:
         model: GROQ_MODEL,
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user',   content: userPrompt   }
+          { role: 'user', content: userPrompt }
         ],
         temperature: 0.1,
         max_tokens: 150,
@@ -198,12 +195,12 @@ Respond with ONLY this JSON object:
     );
 
     return {
-      topic:                    parsed.topic,
-      subtopic:                 parsed.subtopic,
-      confidence:               parsed.confidence,
-      source:                   'ai',
+      topic: parsed.topic,
+      subtopic: parsed.subtopic,
+      confidence: parsed.confidence,
+      source: 'ai',
       targetPath,
-      userConfirmationRequired: parsed.confidence < 0.60
+      userConfirmationRequired: false
     };
 
   } catch (err: unknown) {
@@ -214,5 +211,43 @@ Respond with ONLY this JSON object:
       outputChannel.appendLine(`[Nette AI] Error: ${msg}`);
     }
     return null;
+  }
+}
+
+// ── Interactive configuration ────────────────────────────────
+let hasPromptedThisSession = false;
+
+async function promptForKeyOnce(outputChannel: vscode.OutputChannel) {
+  if (hasPromptedThisSession) { return; }
+  hasPromptedThisSession = true;
+
+  const btn = 'Set Groq API Key';
+  const selection = await vscode.window.showWarningMessage(
+    'Nette: Groq AI classification is enabled but no API key is set.',
+    btn
+  );
+
+  if (selection === btn) {
+    const key = await vscode.window.showInputBox({
+      title: 'Nette: Set Groq API Key',
+      prompt: 'Paste your API key from console.groq.com (starts with gsk_)',
+      placeHolder: 'gsk_...',
+      ignoreFocusOut: true,
+      password: true
+    });
+
+    if (key && key.trim().startsWith('gsk_')) {
+      await vscode.workspace.getConfiguration('nette').update(
+        'groqApiKey',
+        key.trim(),
+        vscode.ConfigurationTarget.Global
+      );
+      vscode.window.showInformationMessage('Nette: Groq API key saved successfully.');
+    } else if (key) {
+      vscode.window.showErrorMessage('Invalid Groq API key format. Should start with "gsk_".');
+      hasPromptedThisSession = false; // allow retry
+    } else {
+      hasPromptedThisSession = false; // user cancelled, allow prompt again next file
+    }
   }
 }

@@ -4,6 +4,7 @@ import { FileSignal } from './types';
 
 export class FileWatcher extends vscode.Disposable {
   private _timeouts: Map<string, any> = new Map();
+  private _manualSavePaths: Set<string> = new Set();
   private activeProcessingCount = 0;
   private readonly MAX_CONCURRENT = 3;
 
@@ -13,17 +14,36 @@ export class FileWatcher extends vscode.Disposable {
     private onSignal: (signal: FileSignal) => void
   ) {
     super(() => this.disposeInternal());
-    const sub = vscode.workspace.onDidSaveTextDocument((doc) => this.handleSave(doc));
-    this.context.subscriptions.push(sub);
+
+    // Tracks intention for intentional (manual) saves
+    const willSave = vscode.workspace.onWillSaveTextDocument((e) => {
+      if (e.reason === vscode.TextDocumentSaveReason.Manual) {
+        this._manualSavePaths.add(e.document.uri.fsPath);
+      }
+    });
+
+    const didSave = vscode.workspace.onDidSaveTextDocument((doc) => this.handleSave(doc));
+    
+    this.context.subscriptions.push(willSave, didSave);
   }
 
   private async handleSave(document: vscode.TextDocument) {
+    const fsPath = document.uri.fsPath;
+    const config = vscode.workspace.getConfiguration('nette');
+    const manualOnly = config.get<boolean>('manualSaveOnly', true);
+
+    // If manualOnly is on, and the save reason wasn't Manual, ignore it
+    if (manualOnly && !this._manualSavePaths.has(fsPath)) {
+      return;
+    }
+
+    // Clear from manual set after verification
+    this._manualSavePaths.delete(fsPath);
+
     if (!this.shouldProcess(document)) {
       return;
     }
 
-    const fsPath = document.uri.fsPath;
-    const config = vscode.workspace.getConfiguration('nette');
     const debounceMs = config.get<number>('debounceMs', 300);
 
     // Clear existing timeout
@@ -101,5 +121,6 @@ export class FileWatcher extends vscode.Disposable {
       clearTimeout(timeout);
     }
     this._timeouts.clear();
+    this._manualSavePaths.clear();
   }
 }

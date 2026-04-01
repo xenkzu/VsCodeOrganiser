@@ -43,17 +43,31 @@ class FileWatcher extends vscode.Disposable {
         this.outputChannel = outputChannel;
         this.onSignal = onSignal;
         this._timeouts = new Map();
+        this._manualSavePaths = new Set();
         this.activeProcessingCount = 0;
         this.MAX_CONCURRENT = 3;
-        const sub = vscode.workspace.onDidSaveTextDocument((doc) => this.handleSave(doc));
-        this.context.subscriptions.push(sub);
+        // Tracks intention for intentional (manual) saves
+        const willSave = vscode.workspace.onWillSaveTextDocument((e) => {
+            if (e.reason === vscode.TextDocumentSaveReason.Manual) {
+                this._manualSavePaths.add(e.document.uri.fsPath);
+            }
+        });
+        const didSave = vscode.workspace.onDidSaveTextDocument((doc) => this.handleSave(doc));
+        this.context.subscriptions.push(willSave, didSave);
     }
     async handleSave(document) {
+        const fsPath = document.uri.fsPath;
+        const config = vscode.workspace.getConfiguration('nette');
+        const manualOnly = config.get('manualSaveOnly', true);
+        // If manualOnly is on, and the save reason wasn't Manual, ignore it
+        if (manualOnly && !this._manualSavePaths.has(fsPath)) {
+            return;
+        }
+        // Clear from manual set after verification
+        this._manualSavePaths.delete(fsPath);
         if (!this.shouldProcess(document)) {
             return;
         }
-        const fsPath = document.uri.fsPath;
-        const config = vscode.workspace.getConfiguration('nette');
         const debounceMs = config.get('debounceMs', 300);
         // Clear existing timeout
         const existing = this._timeouts.get(fsPath);
@@ -115,6 +129,7 @@ class FileWatcher extends vscode.Disposable {
             clearTimeout(timeout);
         }
         this._timeouts.clear();
+        this._manualSavePaths.clear();
     }
 }
 exports.FileWatcher = FileWatcher;

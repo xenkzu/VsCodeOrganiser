@@ -77,7 +77,7 @@
         },
         "nette.aiEnabled": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "description": "Enable AI fallback classification using Groq when heuristic confidence is low."
         },
         "nette.groqApiKey": {
@@ -94,6 +94,11 @@
           "type": "boolean",
           "default": true,
           "description": "Prefix moved files with the smallest available number in the destination folder (e.g. 0_filename.py)"
+        },
+        "nette.manualSaveOnly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Only organize files on manual save (Ctrl+S). When enabled, auto-save (on focus change or after delay) will not trigger the organizer."
         }
       }
     }
