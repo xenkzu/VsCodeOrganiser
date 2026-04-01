@@ -77,6 +77,49 @@ export class FileMover {
     }
   }
 
+  private getNumberedFileName(
+    destDir: string,
+    fileName: string
+  ): string {
+    // Read the config flag
+    const autoNumber = vscode.workspace
+      .getConfiguration('dsa-organizer')
+      .get<boolean>('autoNumber', true);
+
+    if (!autoNumber) {
+      return fileName;
+    }
+
+    // STEP 1 — Scan the destination folder for already-used numeric prefixes
+    const usedNumbers = new Set<number>();
+    const prefixPattern = /^(\d+)_/;
+
+    if (fs.existsSync(destDir)) {
+      const existing = fs.readdirSync(destDir);
+      for (const name of existing) {
+        const match = prefixPattern.exec(name);
+        if (match) {
+          usedNumbers.add(parseInt(match[1], 10));
+        }
+      }
+    }
+
+    // STEP 2 — Check if this file already has a numeric prefix
+    // If so, keep it as-is (don't double-number)
+    if (prefixPattern.test(fileName)) {
+      return fileName;
+    }
+
+    // STEP 3 — Find the smallest non-negative integer not in usedNumbers
+    let index = 0;
+    while (usedNumbers.has(index)) {
+      index++;
+    }
+
+    // STEP 4 — Return the prefixed filename
+    return `${index}_${fileName}`;
+  }
+
   public async move(
     signal: FileSignal,
     result: ClassificationResult
@@ -91,6 +134,10 @@ export class FileMover {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
     let destDir = path.join(workspaceRoot, result.targetPath);
     let destPath = path.join(destDir, fileName);
+
+    // Apply gap-filling numeric prefix
+    const numberedFileName = this.getNumberedFileName(destDir, fileName);
+    destPath = path.join(destDir, numberedFileName);
 
     // STEP 2 — GUARD CHECKS
     if (!workspaceRoot) {
@@ -116,8 +163,8 @@ export class FileMover {
 
     // STEP 3 — COLLISION HANDLING
     if (fs.existsSync(destPath)) {
-      const ext = path.extname(fileName);
-      const base = path.basename(fileName, ext);
+      const ext = path.extname(numberedFileName);
+      const base = path.basename(numberedFileName, ext);
       let counter = 1;
       while (fs.existsSync(destPath)) {
         destPath = path.join(destDir, `${base}_${counter}${ext}`);
@@ -145,6 +192,34 @@ export class FileMover {
         this.outputChannel.appendLine(`Move failed: ${fallbackErr}`);
         return false;
       }
+    }
+
+    // STEP 9 — Close stale tab and reopen at new path
+    try {
+      // Find and close the tab showing the old file path
+      for (const tabGroup of vscode.window.tabGroups.all) {
+        for (const tab of tabGroup.tabs) {
+          const input = tab.input;
+          if (
+            input instanceof vscode.TabInputText &&
+            input.uri.fsPath === signal.filePath
+          ) {
+            await vscode.window.tabGroups.close(tab);
+            break;
+          }
+        }
+      }
+
+      // Open the file at its new location
+      const newUri = vscode.Uri.file(destPath);
+      const doc = await vscode.workspace.openTextDocument(newUri);
+      await vscode.window.showTextDocument(doc, {
+        preview: false,      // open as a permanent tab, not a preview
+        preserveFocus: false // bring it into focus
+      });
+    } catch (err) {
+      // Non-fatal — log but continue
+      this.outputChannel.appendLine(`Warning: could not reopen tab: ${err}`);
     }
 
     // STEP 6 — RECORD THE MOVE
@@ -183,8 +258,10 @@ export class FileMover {
       this.notifyItem.hide();
     }, 8000);
 
-    // STEP 9 — LOG AND RETURN
-    this.outputChannel.appendLine(`  Moved: ${path.basename(signal.filePath)} → ${destPath}`);
+    // STEP 9 (LOGGING)
+    this.outputChannel.appendLine(
+      `  Moved: ${fileName} → ${path.basename(destPath)} in ${result.targetPath}`
+    );
     return true;
   }
 

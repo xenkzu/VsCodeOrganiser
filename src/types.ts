@@ -65,4 +65,5 @@ export interface OrganizerConfig {
   version: number;
   rules: OrganizerRule[];
   learned: LearnedPattern[];
+  autoNumber?: boolean; // prefix moved files with smallest available number
 }

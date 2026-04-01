@@ -3,7 +3,7 @@
   "displayName": "DSA Workspace Organizer",
   "description": "Automatically organizes your DSA files into topic-based folders.",
   "version": "0.1.0",
-  "publisher": "your-publisher-name",
+  "publisher": "Yash Kaul",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -61,6 +61,11 @@
           "type": "number",
           "default": 300,
           "description": "Debounce time for file system events in milliseconds."
+        },
+        "dsa-organizer.autoNumber": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prefix moved files with the smallest available number in the destination folder (e.g. 0_filename.py)"
         }
       }
     }

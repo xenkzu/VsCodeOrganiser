@@ -597,6 +597,30 @@ var FileMover = class {
     this.outputChannel = outputChannel;
     this.undoStack = [];
     this.MAX_UNDO = 20;
+    this.undoStack = [];
+    context.subscriptions.push(
+      vscode5.commands.registerCommand(
+        "dsa-organizer.toggleEnabled",
+        async () => {
+          const config = vscode5.workspace.getConfiguration("dsa-organizer");
+          const current = config.get("enabled", true);
+          await config.update(
+            "enabled",
+            !current,
+            vscode5.ConfigurationTarget.Workspace
+          );
+          this.updateToggleItem();
+        }
+      )
+    );
+    context.subscriptions.push(
+      vscode5.commands.registerCommand(
+        "dsa-organizer.undoLast",
+        async () => {
+          await this.undo();
+        }
+      )
+    );
     this.toggleItem = vscode5.window.createStatusBarItem(
       vscode5.StatusBarAlignment.Left,
       100
@@ -604,22 +628,13 @@ var FileMover = class {
     this.toggleItem.command = "dsa-organizer.toggleEnabled";
     this.updateToggleItem();
     this.toggleItem.show();
+    context.subscriptions.push(this.toggleItem);
     this.notifyItem = vscode5.window.createStatusBarItem(
       vscode5.StatusBarAlignment.Left,
       99
     );
     this.notifyItem.command = "dsa-organizer.undoLast";
-    const toggleCmd = vscode5.commands.registerCommand("dsa-organizer.toggleEnabled", async () => {
-      const config = vscode5.workspace.getConfiguration("dsa-organizer");
-      const current = config.get("enabled", true);
-      await config.update("enabled", !current, vscode5.ConfigurationTarget.Workspace);
-      this.updateToggleItem();
-      this.outputChannel.appendLine(`DSA Organizer ${!current ? "enabled" : "disabled"}`);
-    });
-    const undoCmd = vscode5.commands.registerCommand("dsa-organizer.undoLast", async () => {
-      await this.undo();
-    });
-    this.context.subscriptions.push(toggleCmd, undoCmd, this.toggleItem, this.notifyItem);
+    context.subscriptions.push(this.notifyItem);
   }
   updateToggleItem() {
     const enabled = vscode5.workspace.getConfiguration("dsa-organizer").get("enabled", true);
@@ -633,6 +648,31 @@ var FileMover = class {
       this.toggleItem.color = new vscode5.ThemeColor("statusBarItem.warningForeground");
     }
   }
+  getNumberedFileName(destDir, fileName) {
+    const autoNumber = vscode5.workspace.getConfiguration("dsa-organizer").get("autoNumber", true);
+    if (!autoNumber) {
+      return fileName;
+    }
+    const usedNumbers = /* @__PURE__ */ new Set();
+    const prefixPattern = /^(\d+)_/;
+    if (fs2.existsSync(destDir)) {
+      const existing = fs2.readdirSync(destDir);
+      for (const name of existing) {
+        const match = prefixPattern.exec(name);
+        if (match) {
+          usedNumbers.add(parseInt(match[1], 10));
+        }
+      }
+    }
+    if (prefixPattern.test(fileName)) {
+      return fileName;
+    }
+    let index = 0;
+    while (usedNumbers.has(index)) {
+      index++;
+    }
+    return `${index}_${fileName}`;
+  }
   async move(signal, result) {
     const enabled = vscode5.workspace.getConfiguration("dsa-organizer").get("enabled", true);
     if (!enabled) {
@@ -642,6 +682,8 @@ var FileMover = class {
     const workspaceRoot = vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
     let destDir = path2.join(workspaceRoot, result.targetPath);
     let destPath = path2.join(destDir, fileName);
+    const numberedFileName = this.getNumberedFileName(destDir, fileName);
+    destPath = path2.join(destDir, numberedFileName);
     if (!workspaceRoot) {
       this.outputChannel.appendLine("Move aborted: no workspace root found");
       return false;
@@ -659,8 +701,8 @@ var FileMover = class {
       return false;
     }
     if (fs2.existsSync(destPath)) {
-      const ext = path2.extname(fileName);
-      const base = path2.basename(fileName, ext);
+      const ext = path2.extname(numberedFileName);
+      const base = path2.basename(numberedFileName, ext);
       let counter = 1;
       while (fs2.existsSync(destPath)) {
         destPath = path2.join(destDir, `${base}_${counter}${ext}`);
@@ -684,6 +726,27 @@ var FileMover = class {
         this.outputChannel.appendLine(`Move failed: ${fallbackErr}`);
         return false;
       }
+    }
+    try {
+      for (const tabGroup of vscode5.window.tabGroups.all) {
+        for (const tab of tabGroup.tabs) {
+          const input = tab.input;
+          if (input instanceof vscode5.TabInputText && input.uri.fsPath === signal.filePath) {
+            await vscode5.window.tabGroups.close(tab);
+            break;
+          }
+        }
+      }
+      const newUri = vscode5.Uri.file(destPath);
+      const doc = await vscode5.workspace.openTextDocument(newUri);
+      await vscode5.window.showTextDocument(doc, {
+        preview: false,
+        // open as a permanent tab, not a preview
+        preserveFocus: false
+        // bring it into focus
+      });
+    } catch (err) {
+      this.outputChannel.appendLine(`Warning: could not reopen tab: ${err}`);
     }
     const record = {
       originalPath: signal.filePath,
@@ -715,7 +778,9 @@ Click to undo`;
     setTimeout(() => {
       this.notifyItem.hide();
     }, 8e3);
-    this.outputChannel.appendLine(`  Moved: ${path2.basename(signal.filePath)} \u2192 ${destPath}`);
+    this.outputChannel.appendLine(
+      `  Moved: ${fileName} \u2192 ${path2.basename(destPath)} in ${result.targetPath}`
+    );
     return true;
   }
   async undo() {
@@ -767,6 +832,11 @@ Click to undo`;
 async function activate(context) {
   const outputChannel = vscode6.window.createOutputChannel("DSA Organizer");
   outputChannel.appendLine("DSA Organizer activated");
+  context.subscriptions.push(
+    vscode6.commands.registerCommand("dsa-organizer.organize", () => {
+      outputChannel.appendLine("Manual organize triggered");
+    })
+  );
   const mover = new FileMover(context, outputChannel);
   context.subscriptions.push(mover);
   let organizerConfig = await loadRules(
@@ -908,10 +978,6 @@ async function activate(context) {
     outputChannel.show(true);
   });
   context.subscriptions.push(watcher, outputChannel);
-  const organizeCommand = vscode6.commands.registerCommand("dsa-organizer.organize", () => {
-    vscode6.window.showInformationMessage("DSA: Looking for disorganized files...");
-  });
-  context.subscriptions.push(organizeCommand);
 }
 function deactivate() {
 }
