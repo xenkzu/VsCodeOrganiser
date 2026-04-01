@@ -70,11 +70,6 @@
           "default": "DSA",
           "description": "Root folder for organized files, relative to workspace. Set to '.' or '' to place files directly in the workspace root with no wrapper folder."
         },
-        "nette.confidenceThreshold": {
-          "type": "number",
-          "default": 0.75,
-          "description": "Minimum confidence required for automatic move."
-        },
         "nette.aiEnabled": {
           "type": "boolean",
           "default": true,
@@ -85,10 +80,12 @@
           "default": "",
           "description": "Groq API key for AI-assisted classification. Get one free at console.groq.com. Stored in VS Code settings — use workspace settings to avoid committing to git."
         },
-        "nette.debounceMs": {
+        "nette.debounceDelay": {
           "type": "number",
-          "default": 300,
-          "description": "Debounce time for file system events in milliseconds."
+          "default": 900,
+          "minimum": 200,
+          "maximum": 5000,
+          "description": "Milliseconds to wait after a file save before classifying. Increase if files are being processed multiple times per save."
         },
         "nette.autoNumber": {
           "type": "boolean",
@@ -99,6 +96,13 @@
           "type": "boolean",
           "default": true,
           "description": "Only organize files on manual save (Ctrl+S). When enabled, auto-save (on focus change or after delay) will not trigger the organizer."
+        },
+        "nette.confidenceThreshold": {
+          "type": "number",
+          "default": 0.55,
+          "minimum": 0.1,
+          "maximum": 1.0,
+          "description": "Minimum confidence score for the heuristic to classify a file without asking AI. Lower = more aggressive classification, higher = more conservative."
         }
       }
     }

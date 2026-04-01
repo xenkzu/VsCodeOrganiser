@@ -446,7 +446,7 @@ const TOPICS: TopicDescriptor[] = [
       { fields: ['classNames'], match: ['Queue', 'CircularQueue', 'Deque', 'MyQueue'], weight: 0.95 },
       { fields: ['methodNames'], match: ['enqueue', 'dequeue', 'slidingWindowMax', 'maxSlidingWindow'], weight: 0.90 },
       { fields: ['variableNames'], match: ['queue', 'deque'], weight: 0.60 },
-      { fields: ['imports'], match: ['deque', 'ArrayDeque', 'LinkedList'], weight: 0.40 }
+      { fields: ['imports'], match: ['deque', 'ArrayDeque', 'LinkedList'], weight: 0.45 }
     ]
   },
   {
@@ -701,6 +701,57 @@ const TOPICS: TopicDescriptor[] = [
   }
 ];
 
+const COMMENT_KEYWORDS: Record<string, string[]> = {
+  'Trees/BinaryTree':   ['binary tree', 'binarytree', 'tree traversal', 'inorder', 'preorder', 'postorder', 'level order'],
+  'Trees/BST':          ['binary search tree', 'bst'],
+  'Trees/Trie':         ['trie', 'prefix tree'],
+  'Trees/SegmentTree':  ['segment tree', 'range query', 'segtree'],
+  'Trees/FenwickTree':  ['fenwick', 'binary indexed tree', 'bit tree'],
+  'Trees/AVLTree':      ['avl', 'avl tree', 'balanced bst'],
+  'LinkedLists/Singly': ['linked list', 'singly linked', 'linkedlist'],
+  'LinkedLists/Doubly': ['doubly linked', 'dll'],
+  'LinkedLists/FastSlowPointer': ['fast slow', 'tortoise', 'hare', 'cycle detection', 'floyd'],
+  'Graphs/DFS':         ['depth first', 'dfs', 'depth-first'],
+  'Graphs/BFS':         ['breadth first', 'bfs', 'breadth-first'],
+  'Graphs/TopologicalSort': ['topological', 'topo sort', 'kahn'],
+  'Graphs/UnionFind':   ['union find', 'disjoint set', 'dsu'],
+  'Graphs/Dijkstra':    ['dijkstra', 'shortest path'],
+  'Graphs/BellmanFord': ['bellman ford', 'bellman-ford'],
+  'Graphs/FloydWarshall': ['floyd warshall', 'all pairs shortest'],
+  'Graphs/MST':         ['minimum spanning tree', 'kruskal', 'prim', 'mst'],
+  'Graphs/SCC':         ['strongly connected', 'kosaraju', 'tarjan'],
+  'DynamicProgramming/Memo':       ['memoization', 'top down dp', 'memo'],
+  'DynamicProgramming/Tabulation': ['tabulation', 'bottom up dp', 'dynamic programming'],
+  'DynamicProgramming/Knapsack':   ['knapsack', '0/1 knapsack', 'subset sum'],
+  'DynamicProgramming/IntervalDP': ['interval dp', 'matrix chain'],
+  'DynamicProgramming/StringDP':   ['edit distance', 'lcs', 'longest common'],
+  'DynamicProgramming/TreeDP':     ['tree dp', 'tree dynamic programming'],
+  'Sorting':            ['sorting', 'merge sort', 'quick sort', 'heap sort'],
+  'Heap':               ['heap', 'priority queue', 'min heap', 'max heap'],
+  'Backtracking':       ['backtracking', 'backtrack'],
+  'Arrays/SlidingWindow': ['sliding window', 'window technique'],
+  'TwoPointers':        ['two pointer', 'two-pointer'],
+  'BinarySearch':       ['binary search'],
+  'Stack':              ['stack', 'monotonic stack'],
+  'Queue':              ['queue', 'circular queue'],
+  'Hashing':            ['hash map', 'hashmap', 'hash table', 'hashing'],
+  'Greedy':             ['greedy', 'greedy algorithm'],
+  'BitManipulation':    ['bit manipulation', 'bitwise', 'xor trick'],
+  'Math':               ['math', 'number theory', 'prime', 'gcd'],
+  'Strings/KMP':        ['kmp', 'knuth morris pratt'],
+  'Strings/RabinKarp':  ['rabin karp', 'rolling hash'],
+  'Strings/ZAlgorithm': ['z algorithm', 'z function'],
+  'Strings/Manacher':   ['manacher', 'palindrome'],
+  'Matrix/Islands':     ['island', 'flood fill', 'number of islands'],
+  'Matrix/Traversal':   ['matrix', 'spiral', 'rotate matrix'],
+  'Matrix/GridDP':      ['grid dp', 'path in grid', 'unique paths'],
+  'Recursion/Permutations': ['permutation', 'permutations'],
+  'Recursion/Subsets':  ['subset', 'power set', 'combination'],
+  'Geometry':           ['convex hull', 'geometry', 'cross product'],
+  'AdvancedDS/LRUCache':['lru', 'least recently used'],
+  'AdvancedDS/MonotonicStack': ['monotonic stack', 'next greater'],
+};
+
 export function classifyHeuristic(signal: FileSignal): ClassificationResult[] {
   let results: ClassificationResult[] = [];
   for (const descriptor of TOPICS) {
@@ -736,8 +787,6 @@ export function classifyHeuristic(signal: FileSignal): ClassificationResult[] {
       if (rule.rawRegex) {
         try {
           const re = new RegExp(rule.rawRegex, 'i');
-          // Test on a capped version of the snippet (already capped in reader,
-          // but double-check here as defense in depth)
           const safSnippet = signal.rawSnippet.slice(0, 8192);
           matched = re.test(safSnippet);
         } catch {
@@ -766,6 +815,16 @@ export function classifyHeuristic(signal: FileSignal): ClassificationResult[] {
       totalScore = Math.min(1.0, totalScore + rule.weight);
     }
 
+    // Comment keyword boost
+    const commentKeys = COMMENT_KEYWORDS[descriptor.folder];
+    if (commentKeys && signal.comments && signal.comments.length > 0) {
+      const joined = signal.comments.join(' ');
+      const commentHit = commentKeys.some(k => joined.includes(k));
+      if (commentHit) {
+        totalScore = Math.min(1.0, totalScore + 0.60);
+      }
+    }
+
     if (totalScore > 0.20) {
       results.push({
         topic: descriptor.topic,
@@ -775,6 +834,11 @@ export function classifyHeuristic(signal: FileSignal): ClassificationResult[] {
         targetPath: descriptor.folder,
         userConfirmationRequired: false
       });
+
+      // Early Exit Optimization
+      if (signal.earlyExitSignal && results.some(r => r.confidence >= 0.90)) {
+        break; // skip remaining descriptors
+      }
     }
   }
 

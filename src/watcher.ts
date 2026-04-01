@@ -32,19 +32,16 @@ export class FileWatcher extends vscode.Disposable {
     const config = vscode.workspace.getConfiguration('nette');
     const manualOnly = config.get<boolean>('manualSaveOnly', true);
 
-    // If manualOnly is on, and the save reason wasn't Manual, ignore it
     if (manualOnly && !this._manualSavePaths.has(fsPath)) {
       return;
     }
-
-    // Clear from manual set after verification
     this._manualSavePaths.delete(fsPath);
 
     if (!this.shouldProcess(document)) {
       return;
     }
 
-    const debounceMs = config.get<number>('debounceMs', 300);
+    const debounceMs = config.get<number>('debounceDelay', 900);
 
     // Clear existing timeout
     const existing = this._timeouts.get(fsPath);

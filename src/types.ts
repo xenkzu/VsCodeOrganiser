@@ -9,6 +9,8 @@ export interface FileSignal {
   imports: string[];
   lineCount: number;
   rawSnippet: string; // first 60 lines
+  comments: string[]; // extracted comment and docstring lines, lowercased
+  earlyExitSignal?: boolean;
 }
 
 export type ClassificationSource = 'heuristic' | 'rules' | 'ai' | 'user';
