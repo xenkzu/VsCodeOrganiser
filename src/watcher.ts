@@ -4,6 +4,8 @@ import { FileSignal } from './types';
 
 export class FileWatcher extends vscode.Disposable {
   private _timeouts: Map<string, any> = new Map();
+  private activeProcessingCount = 0;
+  private readonly MAX_CONCURRENT = 3;
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -33,8 +35,22 @@ export class FileWatcher extends vscode.Disposable {
     // Set new timeout
     const timeout = setTimeout(async () => {
       this._timeouts.delete(fsPath);
-      const signal = extractSignals(document);
-      this.onSignal(signal);
+
+      // Rate limit: skip if too many files are being processed concurrently
+      if (this.activeProcessingCount >= this.MAX_CONCURRENT) {
+        this.outputChannel.appendLine(
+          `Rate limit: skipping ${vscode.workspace.asRelativePath(document.uri)} (${this.MAX_CONCURRENT} files already processing)`
+        );
+        return;
+      }
+
+      this.activeProcessingCount++;
+      try {
+        const signal = extractSignals(document);
+        this.onSignal(signal);
+      } finally {
+        this.activeProcessingCount--;
+      }
     }, debounceMs);
 
     this._timeouts.set(fsPath, timeout);

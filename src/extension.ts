@@ -7,6 +7,12 @@ import { mergeResults } from './merger';
 import { FileMover } from './mover';
 import { OrganizerConfig, ClassificationResult } from './types';
 
+function toRelative(absolutePath: string, workspaceRoot: string): string {
+  const rel = path.relative(workspaceRoot, absolutePath);
+  // If relative path escapes workspace, return just the filename
+  return rel.startsWith('..') ? path.basename(absolutePath) : rel;
+}
+
 export async function activate(context: vscode.ExtensionContext) {
   // 1. Create an output channel
   const outputChannel = vscode.window.createOutputChannel('DSA Organizer');
@@ -23,31 +29,27 @@ export async function activate(context: vscode.ExtensionContext) {
   const mover = new FileMover(context, outputChannel);
   context.subscriptions.push(mover);
 
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+
   // Load workspace rules once at activation
-  let organizerConfig: OrganizerConfig | null = await loadRules(
-    vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? ''
-  );
+  let organizerConfig: OrganizerConfig | null = await loadRules(workspaceRoot);
 
   // Re-load rules if organizer.json changes while VS Code is open
   const configWatcher = vscode.workspace.createFileSystemWatcher('**/organizer.json');
   configWatcher.onDidChange(async () => {
-    organizerConfig = await loadRules(
-      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? ''
-    );
+    organizerConfig = await loadRules(workspaceRoot);
     outputChannel.appendLine('organizer.json reloaded');
   });
   configWatcher.onDidCreate(async () => {
-    organizerConfig = await loadRules(
-      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? ''
-    );
+    organizerConfig = await loadRules(workspaceRoot);
     outputChannel.appendLine('organizer.json loaded');
   });
   context.subscriptions.push(configWatcher);
 
   // 3. Instantiate the FileWatcher
   const watcher = new FileWatcher(context, outputChannel, async (signal) => {
-    outputChannel.appendLine('── Signal captured ──');
-    outputChannel.appendLine(JSON.stringify(signal, null, 2));
+    outputChannel.appendLine(`── Signal captured: ${toRelative(signal.filePath, workspaceRoot)} ──`);
+    // outputChannel.appendLine(JSON.stringify(signal, null, 2)); // Redacted absolute paths
 
     // Step 1: heuristic
     const heuristicResults = classifyHeuristic(signal);

@@ -3,6 +3,22 @@ import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { FileSignal, ClassificationResult, MoveRecord } from './types';
 
+function sanitizeFolderSegment(segment: string): string {
+  // Remove any path traversal sequences, null bytes, and invalid chars
+  return segment
+    .replace(/\.\./g, '')           // remove ".."
+    .replace(/[<>:"|?*\x00]/g, '')  // remove Windows-invalid chars + null
+    .replace(/^[/\\]+/, '')         // remove leading slashes
+    .replace(/[/\\]+$/, '')         // remove trailing slashes
+    .trim();
+}
+
+function toRelative(absolutePath: string, workspaceRoot: string): string {
+  const rel = path.relative(workspaceRoot, absolutePath);
+  // If relative path escapes workspace, return just the filename
+  return rel.startsWith('..') ? path.basename(absolutePath) : rel;
+}
+
 export class FileMover {
   private undoStack: MoveRecord[] = [];
   private readonly MAX_UNDO = 20;
@@ -132,7 +148,19 @@ export class FileMover {
     // STEP 1 — RESOLVE DESTINATION PATH
     const fileName = path.basename(signal.filePath);
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-    let destDir = path.join(workspaceRoot, result.targetPath);
+    
+    const safeTargetPath = result.targetPath
+      .split(/[/\\]/)
+      .map(sanitizeFolderSegment)
+      .filter(s => s.length > 0)
+      .join(path.sep);
+
+    if (safeTargetPath.length === 0) {
+      this.outputChannel.appendLine('Move aborted: invalid target path after sanitization');
+      return false;
+    }
+
+    let destDir = path.join(workspaceRoot, safeTargetPath);
     let destPath = path.join(destDir, fileName);
 
     // Apply gap-filling numeric prefix
@@ -146,7 +174,19 @@ export class FileMover {
     }
 
     if (!fs.existsSync(signal.filePath)) {
-      this.outputChannel.appendLine(`Move aborted: source file not found: ${signal.filePath}`);
+      this.outputChannel.appendLine(`Move aborted: source not found: ${toRelative(signal.filePath, workspaceRoot)}`);
+      return false;
+    }
+
+    // Reject symlinks — moving a symlink target is dangerous
+    try {
+      const lstat = fs.lstatSync(signal.filePath);
+      if (lstat.isSymbolicLink()) {
+        this.outputChannel.appendLine('Move aborted: refusing to move a symbolic link');
+        return false;
+      }
+    } catch {
+      this.outputChannel.appendLine('Move aborted: could not stat source file');
       return false;
     }
 
@@ -155,9 +195,23 @@ export class FileMover {
       return false;
     }
 
-    // Path traversal check
-    if (!destDir.startsWith(workspaceRoot)) {
-      this.outputChannel.appendLine('Move aborted: destination is outside workspace');
+    // Resolve both paths to their real canonical forms before comparing
+    const resolvedWorkspace = (typeof fs.realpathSync.native === 'function')
+      ? (() => {
+          try { return fs.realpathSync(workspaceRoot); }
+          catch { return path.resolve(workspaceRoot); }
+        })()
+      : path.resolve(workspaceRoot);
+
+    const resolvedDest = path.resolve(destDir);
+
+    // Normalize to lowercase on Windows for case-insensitive comparison
+    const normalize = (p: string) =>
+      process.platform === 'win32' ? p.toLowerCase() : p;
+
+    if (!normalize(resolvedDest).startsWith(normalize(resolvedWorkspace) + path.sep) &&
+        normalize(resolvedDest) !== normalize(resolvedWorkspace)) {
+      this.outputChannel.appendLine('Move aborted: path traversal attempt detected');
       return false;
     }
 
@@ -244,6 +298,10 @@ export class FileMover {
         history = JSON.parse(fs.readFileSync(historyPath, 'utf8'));
       }
       history.push(record);
+      // Keep only the last 500 records to prevent unbounded file growth
+      if (history.length > 500) {
+        history = history.slice(-500);
+      }
       fs.writeFileSync(historyPath, JSON.stringify(history, null, 2));
     } catch (err) {
       this.outputChannel.appendLine(`Warning: could not write history: ${err}`);
@@ -260,7 +318,7 @@ export class FileMover {
 
     // STEP 9 (LOGGING)
     this.outputChannel.appendLine(
-      `  Moved: ${fileName} → ${path.basename(destPath)} in ${result.targetPath}`
+      `  Moved: ${fileName} → ${toRelative(destPath, workspaceRoot)} in ${result.targetPath}`
     );
     return true;
   }
@@ -272,6 +330,7 @@ export class FileMover {
     }
 
     const record = this.undoStack.pop()!;
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
 
     if (!fs.existsSync(record.newPath)) {
       vscode.window.showWarningMessage(`Cannot undo: file no longer exists at ${record.newPath}`);
@@ -295,10 +354,10 @@ export class FileMover {
 
     // Step 6: Clean up empty destination directory
     try {
-      const destDir = path.dirname(record.newPath);
-      const remaining = fs.readdirSync(destDir);
+      const destDirAlt = path.dirname(record.newPath);
+      const remaining = fs.readdirSync(destDirAlt);
       if (remaining.length === 0) {
-        fs.rmdirSync(destDir);
+        fs.rmdirSync(destDirAlt);
       }
     } catch {
       // Non-fatal
@@ -306,11 +365,11 @@ export class FileMover {
 
     // Step 7: Update UI
     this.notifyItem.text = `$(undo) Restored: ${path.basename(record.originalPath)}`;
-    this.notifyItem.tooltip = `File restored to ${record.originalPath}`;
+    this.notifyItem.tooltip = `File restored to ${toRelative(record.originalPath, workspaceRoot)}`;
     this.notifyItem.show();
     setTimeout(() => this.notifyItem.hide(), 5000);
 
-    this.outputChannel.appendLine(`  Undone: ${record.newPath} → ${record.originalPath}`);
+    this.outputChannel.appendLine(`  Undone: ${toRelative(record.newPath, workspaceRoot)} → ${toRelative(record.originalPath, workspaceRoot)}`);
     vscode.window.showInformationMessage(`Restored: ${path.basename(record.originalPath)}`);
   }
 

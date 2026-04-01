@@ -174,7 +174,15 @@ export function classifyHeuristic(signal: FileSignal): ClassificationResult[] {
 
       // 4. rawRegex match
       if (rule.rawRegex) {
-        matched = new RegExp(rule.rawRegex, 'i').test(signal.rawSnippet);
+        try {
+          const re = new RegExp(rule.rawRegex, 'i');
+          // Test on a capped version of the snippet (already capped in reader,
+          // but double-check here as defense in depth)
+          const safSnippet = signal.rawSnippet.slice(0, 8192);
+          matched = re.test(safSnippet);
+        } catch {
+          matched = false;
+        }
       }
 
       if (!matched) continue;

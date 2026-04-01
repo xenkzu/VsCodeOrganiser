@@ -10,16 +10,14 @@ export function extractSignals(document: vscode.TextDocument): FileSignal {
     'typescript': 'typescript',
     'javascript': 'javascript'
   };
-
   const internalLang = languageMap[document.languageId];
-
   const lineCount = document.lineCount;
   const snippetLines = Math.min(60, lineCount);
   const rawSnippetLines: string[] = [];
   for (let i = 0; i < snippetLines; i++) {
     rawSnippetLines.push(document.lineAt(i).text);
   }
-  const rawSnippet = rawSnippetLines.join('\n');
+  const rawSnippet = rawSnippetLines.join('\n').slice(0, 8192); // Cap to 8KB to prevent ReDoS
 
   if (!internalLang) {
     return {

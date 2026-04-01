@@ -57,7 +57,7 @@ function extractSignals(document) {
   for (let i = 0; i < snippetLines; i++) {
     rawSnippetLines.push(document.lineAt(i).text);
   }
-  const rawSnippet = rawSnippetLines.join("\n");
+  const rawSnippet = rawSnippetLines.join("\n").slice(0, 8192);
   if (!internalLang) {
     return {
       filePath: document.uri.fsPath,
@@ -170,6 +170,8 @@ var FileWatcher = class extends vscode.Disposable {
     this.outputChannel = outputChannel;
     this.onSignal = onSignal;
     this._timeouts = /* @__PURE__ */ new Map();
+    this.activeProcessingCount = 0;
+    this.MAX_CONCURRENT = 3;
     const sub = vscode.workspace.onDidSaveTextDocument((doc) => this.handleSave(doc));
     this.context.subscriptions.push(sub);
   }
@@ -186,8 +188,19 @@ var FileWatcher = class extends vscode.Disposable {
     }
     const timeout = setTimeout(async () => {
       this._timeouts.delete(fsPath);
-      const signal = extractSignals(document);
-      this.onSignal(signal);
+      if (this.activeProcessingCount >= this.MAX_CONCURRENT) {
+        this.outputChannel.appendLine(
+          `Rate limit: skipping ${vscode.workspace.asRelativePath(document.uri)} (${this.MAX_CONCURRENT} files already processing)`
+        );
+        return;
+      }
+      this.activeProcessingCount++;
+      try {
+        const signal = extractSignals(document);
+        this.onSignal(signal);
+      } finally {
+        this.activeProcessingCount--;
+      }
     }, debounceMs);
     this._timeouts.set(fsPath, timeout);
   }
@@ -376,7 +389,13 @@ function classifyHeuristic(signal) {
         matched = signal.rawSnippet.includes(rule.rawContains);
       }
       if (rule.rawRegex) {
-        matched = new RegExp(rule.rawRegex, "i").test(signal.rawSnippet);
+        try {
+          const re = new RegExp(rule.rawRegex, "i");
+          const safSnippet = signal.rawSnippet.slice(0, 8192);
+          matched = re.test(safSnippet);
+        } catch {
+          matched = false;
+        }
       }
       if (!matched)
         continue;
@@ -429,6 +448,9 @@ function classifyHeuristic(signal) {
 var path = __toESM(require("path"));
 var fs = __toESM(require("fs"));
 var vscode3 = __toESM(require("vscode"));
+function sanitizeIdentifier(value) {
+  return value.replace(/[^\w$]/g, "").slice(0, 128);
+}
 async function loadRules(workspaceRoot) {
   const configPath = path.join(workspaceRoot, "organizer.json");
   if (!fs.existsSync(configPath)) {
@@ -440,6 +462,33 @@ async function loadRules(workspaceRoot) {
     if (parsed.version !== 1 || !Array.isArray(parsed.rules)) {
       console.warn("organizer.json validation failed: version must be 1, rules must be an array.");
       return null;
+    }
+    for (const rule of parsed.rules) {
+      const cond = rule.conditions;
+      const sanitizeCondValue = (v) => {
+        if (typeof v !== "string") {
+          return "";
+        }
+        return v.replace(/\x00/g, "").slice(0, 256);
+      };
+      if (cond.fileNameContains) {
+        cond.fileNameContains = sanitizeCondValue(cond.fileNameContains);
+      }
+      if (cond.classNameContains) {
+        cond.classNameContains = sanitizeCondValue(cond.classNameContains);
+      }
+      if (cond.methodNameContains) {
+        cond.methodNameContains = sanitizeCondValue(cond.methodNameContains);
+      }
+      if (cond.importContains) {
+        cond.importContains = sanitizeCondValue(cond.importContains);
+      }
+      if (cond.rawSnippetContains) {
+        cond.rawSnippetContains = sanitizeCondValue(cond.rawSnippetContains);
+      }
+      if (rule.target?.folder) {
+        rule.target.folder = sanitizeCondValue(rule.target.folder);
+      }
     }
     return {
       version: parsed.version,
@@ -540,8 +589,8 @@ async function learnFromUserChoice(signal, chosen, workspaceRoot) {
   const targetFolder = chosen.targetPath.startsWith(`${rootDir}/`) ? chosen.targetPath.substring(`${rootDir}/`.length) : chosen.targetPath;
   const newPattern = {
     pattern: {
-      classNames: signal.classNames.length > 0 ? [...signal.classNames] : void 0,
-      methodNames: signal.methodNames.length > 0 ? [...signal.methodNames] : void 0
+      classNames: signal.classNames.length > 0 ? signal.classNames.map(sanitizeIdentifier).filter((s) => s.length > 0).slice(0, 20) : void 0,
+      methodNames: signal.methodNames.length > 0 ? signal.methodNames.map(sanitizeIdentifier).filter((s) => s.length > 0).slice(0, 50) : void 0
     },
     target: {
       topic: chosen.topic,
@@ -561,8 +610,11 @@ async function learnFromUserChoice(signal, chosen, workspaceRoot) {
   } else {
     config.learned.push(newPattern);
   }
+  if (config.learned.length > 100) {
+    config.learned = config.learned.sort((a, b) => b.timesApplied - a.timesApplied).slice(0, 100);
+  }
   try {
-    const tmpPath = configPath + ".tmp";
+    const tmpPath = configPath + `.tmp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), "utf8");
     fs.renameSync(tmpPath, configPath);
   } catch (err) {
@@ -591,6 +643,13 @@ function mergeResults(heuristic, rule) {
 var path2 = __toESM(require("path"));
 var fs2 = __toESM(require("fs"));
 var vscode5 = __toESM(require("vscode"));
+function sanitizeFolderSegment(segment) {
+  return segment.replace(/\.\./g, "").replace(/[<>:"|?*\x00]/g, "").replace(/^[/\\]+/, "").replace(/[/\\]+$/, "").trim();
+}
+function toRelative(absolutePath, workspaceRoot) {
+  const rel = path2.relative(workspaceRoot, absolutePath);
+  return rel.startsWith("..") ? path2.basename(absolutePath) : rel;
+}
 var FileMover = class {
   constructor(context, outputChannel) {
     this.context = context;
@@ -680,7 +739,12 @@ var FileMover = class {
     }
     const fileName = path2.basename(signal.filePath);
     const workspaceRoot = vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
-    let destDir = path2.join(workspaceRoot, result.targetPath);
+    const safeTargetPath = result.targetPath.split(/[/\\]/).map(sanitizeFolderSegment).filter((s) => s.length > 0).join(path2.sep);
+    if (safeTargetPath.length === 0) {
+      this.outputChannel.appendLine("Move aborted: invalid target path after sanitization");
+      return false;
+    }
+    let destDir = path2.join(workspaceRoot, safeTargetPath);
     let destPath = path2.join(destDir, fileName);
     const numberedFileName = this.getNumberedFileName(destDir, fileName);
     destPath = path2.join(destDir, numberedFileName);
@@ -689,15 +753,34 @@ var FileMover = class {
       return false;
     }
     if (!fs2.existsSync(signal.filePath)) {
-      this.outputChannel.appendLine(`Move aborted: source file not found: ${signal.filePath}`);
+      this.outputChannel.appendLine(`Move aborted: source not found: ${toRelative(signal.filePath, workspaceRoot)}`);
+      return false;
+    }
+    try {
+      const lstat = fs2.lstatSync(signal.filePath);
+      if (lstat.isSymbolicLink()) {
+        this.outputChannel.appendLine("Move aborted: refusing to move a symbolic link");
+        return false;
+      }
+    } catch {
+      this.outputChannel.appendLine("Move aborted: could not stat source file");
       return false;
     }
     if (signal.filePath === destPath) {
       this.outputChannel.appendLine("Move aborted: file is already in the correct location");
       return false;
     }
-    if (!destDir.startsWith(workspaceRoot)) {
-      this.outputChannel.appendLine("Move aborted: destination is outside workspace");
+    const resolvedWorkspace = typeof fs2.realpathSync.native === "function" ? (() => {
+      try {
+        return fs2.realpathSync(workspaceRoot);
+      } catch {
+        return path2.resolve(workspaceRoot);
+      }
+    })() : path2.resolve(workspaceRoot);
+    const resolvedDest = path2.resolve(destDir);
+    const normalize = (p) => process.platform === "win32" ? p.toLowerCase() : p;
+    if (!normalize(resolvedDest).startsWith(normalize(resolvedWorkspace) + path2.sep) && normalize(resolvedDest) !== normalize(resolvedWorkspace)) {
+      this.outputChannel.appendLine("Move aborted: path traversal attempt detected");
       return false;
     }
     if (fs2.existsSync(destPath)) {
@@ -767,6 +850,9 @@ var FileMover = class {
         history = JSON.parse(fs2.readFileSync(historyPath, "utf8"));
       }
       history.push(record);
+      if (history.length > 500) {
+        history = history.slice(-500);
+      }
       fs2.writeFileSync(historyPath, JSON.stringify(history, null, 2));
     } catch (err) {
       this.outputChannel.appendLine(`Warning: could not write history: ${err}`);
@@ -779,7 +865,7 @@ Click to undo`;
       this.notifyItem.hide();
     }, 8e3);
     this.outputChannel.appendLine(
-      `  Moved: ${fileName} \u2192 ${path2.basename(destPath)} in ${result.targetPath}`
+      `  Moved: ${fileName} \u2192 ${toRelative(destPath, workspaceRoot)} in ${result.targetPath}`
     );
     return true;
   }
@@ -789,6 +875,7 @@ Click to undo`;
       return;
     }
     const record = this.undoStack.pop();
+    const workspaceRoot = vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
     if (!fs2.existsSync(record.newPath)) {
       vscode5.window.showWarningMessage(`Cannot undo: file no longer exists at ${record.newPath}`);
       return;
@@ -807,18 +894,18 @@ Click to undo`;
       }
     }
     try {
-      const destDir = path2.dirname(record.newPath);
-      const remaining = fs2.readdirSync(destDir);
+      const destDirAlt = path2.dirname(record.newPath);
+      const remaining = fs2.readdirSync(destDirAlt);
       if (remaining.length === 0) {
-        fs2.rmdirSync(destDir);
+        fs2.rmdirSync(destDirAlt);
       }
     } catch {
     }
     this.notifyItem.text = `$(undo) Restored: ${path2.basename(record.originalPath)}`;
-    this.notifyItem.tooltip = `File restored to ${record.originalPath}`;
+    this.notifyItem.tooltip = `File restored to ${toRelative(record.originalPath, workspaceRoot)}`;
     this.notifyItem.show();
     setTimeout(() => this.notifyItem.hide(), 5e3);
-    this.outputChannel.appendLine(`  Undone: ${record.newPath} \u2192 ${record.originalPath}`);
+    this.outputChannel.appendLine(`  Undone: ${toRelative(record.newPath, workspaceRoot)} \u2192 ${toRelative(record.originalPath, workspaceRoot)}`);
     vscode5.window.showInformationMessage(`Restored: ${path2.basename(record.originalPath)}`);
   }
   dispose() {
@@ -829,6 +916,10 @@ Click to undo`;
 };
 
 // src/extension.ts
+function toRelative2(absolutePath, workspaceRoot) {
+  const rel = path3.relative(workspaceRoot, absolutePath);
+  return rel.startsWith("..") ? path3.basename(absolutePath) : rel;
+}
 async function activate(context) {
   const outputChannel = vscode6.window.createOutputChannel("DSA Organizer");
   outputChannel.appendLine("DSA Organizer activated");
@@ -839,26 +930,20 @@ async function activate(context) {
   );
   const mover = new FileMover(context, outputChannel);
   context.subscriptions.push(mover);
-  let organizerConfig = await loadRules(
-    vscode6.workspace.workspaceFolders?.[0]?.uri.fsPath ?? ""
-  );
+  const workspaceRoot = vscode6.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+  let organizerConfig = await loadRules(workspaceRoot);
   const configWatcher = vscode6.workspace.createFileSystemWatcher("**/organizer.json");
   configWatcher.onDidChange(async () => {
-    organizerConfig = await loadRules(
-      vscode6.workspace.workspaceFolders?.[0]?.uri.fsPath ?? ""
-    );
+    organizerConfig = await loadRules(workspaceRoot);
     outputChannel.appendLine("organizer.json reloaded");
   });
   configWatcher.onDidCreate(async () => {
-    organizerConfig = await loadRules(
-      vscode6.workspace.workspaceFolders?.[0]?.uri.fsPath ?? ""
-    );
+    organizerConfig = await loadRules(workspaceRoot);
     outputChannel.appendLine("organizer.json loaded");
   });
   context.subscriptions.push(configWatcher);
   const watcher = new FileWatcher(context, outputChannel, async (signal) => {
-    outputChannel.appendLine("\u2500\u2500 Signal captured \u2500\u2500");
-    outputChannel.appendLine(JSON.stringify(signal, null, 2));
+    outputChannel.appendLine(`\u2500\u2500 Signal captured: ${toRelative2(signal.filePath, workspaceRoot)} \u2500\u2500`);
     const heuristicResults = classifyHeuristic(signal);
     const ruleResult = organizerConfig ? classifyWithRules(signal, organizerConfig) : null;
     const merged = mergeResults(heuristicResults, ruleResult);
@@ -898,8 +983,8 @@ async function activate(context) {
         targetPath: `${rootDir}/${pick}`,
         userConfirmationRequired: false
       };
-      const workspaceRoot = vscode6.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
-      await learnFromUserChoice(signal, manualResult, workspaceRoot);
+      const workspaceRoot2 = vscode6.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+      await learnFromUserChoice(signal, manualResult, workspaceRoot2);
       await mover.move(signal, manualResult);
       return;
     }
@@ -962,14 +1047,14 @@ async function activate(context) {
           targetPath: `${rootDir}/${manualPick}`,
           userConfirmationRequired: false
         };
-        const workspaceRoot = vscode6.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
-        await learnFromUserChoice(signal, manualResult, workspaceRoot);
+        const workspaceRoot2 = vscode6.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+        await learnFromUserChoice(signal, manualResult, workspaceRoot2);
         await mover.move(signal, manualResult);
         return;
       }
       if (pick.result) {
-        const workspaceRoot = vscode6.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
-        await learnFromUserChoice(signal, pick.result, workspaceRoot);
+        const workspaceRoot2 = vscode6.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+        await learnFromUserChoice(signal, pick.result, workspaceRoot2);
         await mover.move(signal, pick.result);
       }
       return;

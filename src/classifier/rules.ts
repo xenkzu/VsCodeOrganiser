@@ -3,6 +3,12 @@ import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { FileSignal, ClassificationResult, OrganizerConfig, OrganizerRule, LearnedPattern } from '../types';
 
+function sanitizeIdentifier(value: string): string {
+  // Only keep characters valid in a class/method name
+  // Letters, digits, underscore, dollar sign — nothing else
+  return value.replace(/[^\w$]/g, '').slice(0, 128);
+}
+
 export async function loadRules(workspaceRoot: string): Promise<OrganizerConfig | null> {
   const configPath = path.join(workspaceRoot, 'organizer.json');
   if (!fs.existsSync(configPath)) {
@@ -16,6 +22,26 @@ export async function loadRules(workspaceRoot: string): Promise<OrganizerConfig 
       console.warn('organizer.json validation failed: version must be 1, rules must be an array.');
       return null;
     }
+
+    // Sanitize all string condition values
+    for (const rule of parsed.rules) {
+      const cond = rule.conditions;
+      const sanitizeCondValue = (v: unknown): string => {
+        if (typeof v !== 'string') { return ''; }
+        // Cap length and strip null bytes
+        return v.replace(/\x00/g, '').slice(0, 256);
+      };
+      if (cond.fileNameContains)    { cond.fileNameContains    = sanitizeCondValue(cond.fileNameContains); }
+      if (cond.classNameContains)   { cond.classNameContains   = sanitizeCondValue(cond.classNameContains); }
+      if (cond.methodNameContains)  { cond.methodNameContains  = sanitizeCondValue(cond.methodNameContains); }
+      if (cond.importContains)      { cond.importContains      = sanitizeCondValue(cond.importContains); }
+      if (cond.rawSnippetContains)  { cond.rawSnippetContains  = sanitizeCondValue(cond.rawSnippetContains); }
+      // Cap string length on target folder too
+      if (rule.target?.folder) {
+        rule.target.folder = sanitizeCondValue(rule.target.folder);
+      }
+    }
+
     return {
       version: parsed.version,
       rules: parsed.rules,
@@ -139,8 +165,18 @@ export async function learnFromUserChoice(
 
   const newPattern: LearnedPattern = {
     pattern: {
-      classNames: signal.classNames.length > 0 ? [...signal.classNames] : undefined,
-      methodNames: signal.methodNames.length > 0 ? [...signal.methodNames] : undefined,
+      classNames: signal.classNames.length > 0
+        ? signal.classNames
+            .map(sanitizeIdentifier)
+            .filter(s => s.length > 0)
+            .slice(0, 20)          // cap at 20 class names max
+        : undefined,
+      methodNames: signal.methodNames.length > 0
+        ? signal.methodNames
+            .map(sanitizeIdentifier)
+            .filter(s => s.length > 0)
+            .slice(0, 50)          // cap at 50 method names max
+        : undefined,
     },
     target: {
       topic: chosen.topic,
@@ -168,8 +204,15 @@ export async function learnFromUserChoice(
     config.learned.push(newPattern);
   }
 
+  // Keep only the 100 most recently applied learned patterns
+  if (config.learned.length > 100) {
+    config.learned = config.learned
+      .sort((a, b) => b.timesApplied - a.timesApplied)
+      .slice(0, 100);
+  }
+
   try {
-    const tmpPath = configPath + '.tmp';
+    const tmpPath = configPath + `.tmp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), 'utf8');
     fs.renameSync(tmpPath, configPath);
   } catch (err) {
