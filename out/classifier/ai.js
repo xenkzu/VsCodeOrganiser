@@ -94,17 +94,57 @@ function parseGroqResponse(raw) {
         return null;
     }
 }
+// Module-level flag — resets when VS Code closes
+let hasShownApiKeyWarning = false;
+async function promptForApiKey(outputChannel) {
+    if (hasShownApiKeyWarning) {
+        return;
+    }
+    hasShownApiKeyWarning = true;
+    const choice = await vscode.window.showWarningMessage('Nette: No Groq API key found. Enter your key now to enable AI classification.', 'Enter Key', 'Get Free Key', 'Dismiss');
+    if (choice === 'Get Free Key') {
+        vscode.env.openExternal(vscode.Uri.parse('https://console.groq.com/keys'));
+        // After they get the key, re-prompt
+        hasShownApiKeyWarning = false;
+        return;
+    }
+    if (choice !== 'Enter Key') {
+        return;
+    }
+    const key = await vscode.window.showInputBox({
+        title: 'Nette: Groq API Key',
+        prompt: 'Paste your Groq API key here. It will be saved to VS Code settings.',
+        password: true, // masks the key like a password field
+        placeHolder: 'gsk_...',
+        validateInput: (val) => {
+            if (!val || val.trim().length < 10) {
+                return 'Key looks too short! Make sure you copied the full key';
+            }
+            return null;
+        }
+    });
+    if (!key || !key.trim()) {
+        return;
+    }
+    // Save to VS Code user settings under nette.groqApiKey
+    await vscode.workspace
+        .getConfiguration('nette')
+        .update('groqApiKey', key.trim(), vscode.ConfigurationTarget.Global);
+    outputChannel.appendLine('[Nette AI] Groq API key saved to settings.');
+    vscode.window.showInformationMessage('Nette: Groq API key saved. AI classification is now active.');
+}
 // ── Main export ───────────────────────────────────────────────
 async function classifyWithAI(signal, outputChannel) {
     // Read settings
     const config = vscode.workspace.getConfiguration('nette');
     const aiEnabled = config.get('aiEnabled', true);
-    const groqApiKey = config.get('groqApiKey', '').trim();
+    const groqApiKey = config.get('groqApiKey', '');
     if (!aiEnabled) {
         return null;
     }
-    if (!groqApiKey) {
-        promptForKeyOnce(outputChannel);
+    if (!groqApiKey || groqApiKey.trim() === '') {
+        promptForApiKey(outputChannel); // fire and forget — non-blocking
+        outputChannel.appendLine('[Nette AI] API key missing, skipping AI this save.');
         return null;
     }
     // Never log the key — only log its length as a sanity check
@@ -196,35 +236,5 @@ Respond with ONLY this JSON object:
             outputChannel.appendLine(`[Nette AI] Error: ${msg}`);
         }
         return null;
-    }
-}
-// ── Interactive configuration ────────────────────────────────
-let hasPromptedThisSession = false;
-async function promptForKeyOnce(outputChannel) {
-    if (hasPromptedThisSession) {
-        return;
-    }
-    hasPromptedThisSession = true;
-    const btn = 'Set Groq API Key';
-    const selection = await vscode.window.showWarningMessage('Nette: Groq AI classification is enabled but no API key is set.', btn);
-    if (selection === btn) {
-        const key = await vscode.window.showInputBox({
-            title: 'Nette: Set Groq API Key',
-            prompt: 'Paste your API key from console.groq.com (starts with gsk_)',
-            placeHolder: 'gsk_...',
-            ignoreFocusOut: true,
-            password: true
-        });
-        if (key && key.trim().startsWith('gsk_')) {
-            await vscode.workspace.getConfiguration('nette').update('groqApiKey', key.trim(), vscode.ConfigurationTarget.Global);
-            vscode.window.showInformationMessage('Nette: Groq API key saved successfully.');
-        }
-        else if (key) {
-            vscode.window.showErrorMessage('Invalid Groq API key format. Should start with "gsk_".');
-            hasPromptedThisSession = false; // allow retry
-        }
-        else {
-            hasPromptedThisSession = false; // user cancelled, allow prompt again next file
-        }
     }
 }

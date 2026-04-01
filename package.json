@@ -31,12 +31,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_USERNAME/nette"
+    "url": "https://github.com/xenkzu/VsCodeOrganiser"
   },
   "bugs": {
-    "url": "https://github.com/YOUR_USERNAME/nette/issues"
+    "url": "https://github.com/xenkzu/VsCodeOrganiser/issues"
   },
-  "homepage": "https://github.com/YOUR_USERNAME/nette#readme",
+  "homepage": "https://github.com/xenkzu/VsCodeOrganiser#readme",
   "license": "MIT",
   "activationEvents": [
     "onStartupFinished"
@@ -78,7 +78,7 @@
         "nette.groqApiKey": {
           "type": "string",
           "default": "",
-          "description": "Groq API key for AI-assisted classification. Get one free at console.groq.com. Stored in VS Code settings — use workspace settings to avoid committing to git."
+          "markdownDescription": "Your [Groq API key](https://console.groq.com/keys) for AI-powered classification. Free tier is sufficient. Leave empty to use heuristic-only mode."
         },
         "nette.debounceDelay": {
           "type": "number",

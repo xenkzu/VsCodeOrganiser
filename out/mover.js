@@ -96,6 +96,15 @@ class FileMover {
             this.toggleItem.color = new vscode.ThemeColor('statusBarItem.warningForeground');
         }
     }
+    setNoMatchStatus() {
+        this.toggleItem.text = '$(circle-slash) Nette: no DSA pattern found';
+        setTimeout(() => {
+            // Check if text hasn't been changed by something else in the meantime
+            if (this.toggleItem.text === '$(circle-slash) Nette: no DSA pattern found') {
+                this.updateToggleItem(); // Reverts to "Nette: ON" or "OFF"
+            }
+        }, 3000);
+    }
     getNumberedFileName(destDir, fileName) {
         // Read the config flag
         const autoNumber = vscode.workspace

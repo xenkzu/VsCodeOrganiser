@@ -5,7 +5,7 @@ import { classifyHeuristic } from './classifier/heuristic';
 import { loadRules, classifyWithRules, learnFromUserChoice } from './classifier/rules';
 import { mergeResults } from './merger';
 import { FileMover } from './mover';
-import { OrganizerConfig, ClassificationResult } from './types';
+import { OrganizerConfig } from './types';
 
 function toRelative(absolutePath: string, workspaceRoot: string): string {
   const rel = path.relative(workspaceRoot, absolutePath);
@@ -70,40 +70,8 @@ export async function activate(context: vscode.ExtensionContext) {
     outputChannel.appendLine('── Classification outcome ──');
     
     if (!merged) {
-      outputChannel.appendLine('  No classification found — prompting user.');
-
-      const MANUAL_TOPICS = [
-        'Trees/BinaryTree', 'Trees/BST', 'Trees/Trie',
-        'LinkedLists/Singly', 'Graphs/DFS', 'Graphs/BFS',
-        'DynamicProgramming/Memo', 'DynamicProgramming/Tabulation',
-        'Sorting', 'Heap', 'Backtracking', 'Arrays/SlidingWindow',
-        'Skip this file'
-      ];
-
-      const pick = await vscode.window.showQuickPick(MANUAL_TOPICS, {
-        placeHolder: `No topic detected for "${path.basename(signal.filePath)}" — pick manually or skip`
-      });
-
-      if (!pick || pick === 'Skip this file') {
-        outputChannel.appendLine('  Skipped by user.');
-        outputChannel.show(true);
-        return;
-      }
-
-      const parts = pick.split('/');
-
-      const manualResult: ClassificationResult = {
-        topic: parts[0],
-        subtopic: parts[1] ?? 'General',
-        confidence: 1.0,
-        source: 'user',
-        targetPath: pick,
-        userConfirmationRequired: false
-      };
-
-      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-      await learnFromUserChoice(signal, manualResult, workspaceRoot, outputChannel);
-      await mover.move(signal, manualResult, organizerConfig);
+      mover.setNoMatchStatus();
+      outputChannel.appendLine(`[Nette] No classification found for ${path.basename(signal.filePath)} — not a DSA file or confidence too low.`);
       return;
     }
 
@@ -113,74 +81,31 @@ export async function activate(context: vscode.ExtensionContext) {
     outputChannel.appendLine(`  Target   : ${merged.targetPath}`);
     outputChannel.appendLine(`  Needs confirmation: ${merged.userConfirmationRequired}`);
 
-    // Step 5: if user confirmation required, show quick pick placeholder
+    // Step 5: if user confirmation required, show simple notification
     if (merged.userConfirmationRequired) {
-      // Build quick pick from top heuristic candidates
-      const topOptions = heuristicResults.slice(0, 3).map(r => ({
-        label: `$(folder) ${r.topic}/${r.subtopic}`,
-        description: `${Math.round(r.confidence * 100)}% confidence`,
-        detail: `→ ${r.targetPath}`,
-        result: r
-      }));
+      const confidence = Math.round(merged.confidence * 100);
+      const folder = merged.targetPath;
 
-      const manualOptions = [
-        { label: '$(list-unordered) Browse all topics...', description: '', detail: '', result: null },
-        { label: '$(close) Skip this file', description: '', detail: '', result: null }
-      ];
-
-      const pick = await vscode.window.showQuickPick(
-        [...topOptions, ...manualOptions],
-        {
-          placeHolder: `Where should "${path.basename(signal.filePath)}" go?`,
-          matchOnDescription: true
-        }
+      const choice = await vscode.window.showInformationMessage(
+        `Nette: Low confidence match — ${folder} (${confidence}%). Move or skip?`,
+        { modal: false },
+        'Move',
+        'Skip'
       );
 
-      if (!pick || pick.label.includes('Skip')) {
-        outputChannel.appendLine('  Skipped by user.');
-        outputChannel.show(true);
+      if (choice !== 'Move') {
+        outputChannel.appendLine(`[Nette] User skipped: ${merged.targetPath}`);
         return;
       }
-
-      if (pick.label.includes('Browse')) {
-        const MANUAL_TOPICS = [
-          'Trees/BinaryTree', 'Trees/BST', 'Trees/Trie',
-          'LinkedLists/Singly', 'Graphs/DFS', 'Graphs/BFS',
-          'DynamicProgramming/Memo', 'DynamicProgramming/Tabulation',
-          'Sorting', 'Heap', 'Backtracking', 'Arrays/SlidingWindow'
-        ];
-        const manualPick = await vscode.window.showQuickPick(MANUAL_TOPICS, {
-          placeHolder: 'Select destination folder'
-        });
-        if (!manualPick) { return; }
-
-        const parts = manualPick.split('/');
-
-        const manualResult: ClassificationResult = {
-          topic: parts[0],
-          subtopic: parts[1] ?? 'General',
-          confidence: 1.0,
-          source: 'user',
-          targetPath: manualPick,
-          userConfirmationRequired: false
-        };
-
-        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-        await learnFromUserChoice(signal, manualResult, workspaceRoot, outputChannel);
-        await mover.move(signal, manualResult, organizerConfig);
-        return;
-      }
-
-      // User picked one of the top heuristic suggestions
-      if (pick.result) {
-        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-        await learnFromUserChoice(signal, pick.result, workspaceRoot, outputChannel);
-        await mover.move(signal, pick.result, organizerConfig);
-      }
-      return;
+      // If 'Move' — fall through to the normal move logic below
     }
 
-    // High confidence — move automatically
+    // High confidence OR User approved move — move file
+    if (merged.userConfirmationRequired) {
+       // If user explicitly chose 'Move', we can also learn from this choice
+       await learnFromUserChoice(signal, merged, workspaceRoot, outputChannel);
+    }
+    
     await mover.move(signal, merged, organizerConfig);
 
     outputChannel.show(true);
