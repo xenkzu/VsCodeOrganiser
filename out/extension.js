@@ -49,10 +49,10 @@ function toRelative(absolutePath, workspaceRoot) {
 }
 async function activate(context) {
     // 1. Create an output channel
-    const outputChannel = vscode.window.createOutputChannel('DSA Organizer');
-    outputChannel.appendLine('DSA Organizer activated');
+    const outputChannel = vscode.window.createOutputChannel('Nette');
+    outputChannel.appendLine('Nette activated');
     // 2. Register organize command first
-    context.subscriptions.push(vscode.commands.registerCommand('dsa-organizer.organize', () => {
+    context.subscriptions.push(vscode.commands.registerCommand('nette.organize', () => {
         outputChannel.appendLine('Manual organize triggered');
     }));
     // 3. Then instantiate mover (which registers its own commands)
@@ -75,7 +75,6 @@ async function activate(context) {
     // 3. Instantiate the FileWatcher
     const watcher = new watcher_1.FileWatcher(context, outputChannel, async (signal) => {
         outputChannel.appendLine(`── Signal captured: ${toRelative(signal.filePath, workspaceRoot)} ──`);
-        // outputChannel.appendLine(JSON.stringify(signal, null, 2)); // Redacted absolute paths
         // Step 1: heuristic
         const heuristicResults = (0, heuristic_1.classifyHeuristic)(signal);
         // Step 2: rules
@@ -83,7 +82,7 @@ async function activate(context) {
             ? (0, rules_1.classifyWithRules)(signal, organizerConfig)
             : null;
         // Step 3: merge
-        const merged = (0, merger_1.mergeResults)(heuristicResults, ruleResult);
+        const merged = await (0, merger_1.mergeResults)(heuristicResults, ruleResult, signal, outputChannel);
         // Step 4: log outcome
         outputChannel.appendLine('── Classification outcome ──');
         if (!merged) {

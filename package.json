@@ -45,52 +45,52 @@
   "contributes": {
     "commands": [
       {
-        "command": "dsa-organizer.organize",
-        "title": "DSA: Organize Workspace"
+        "command": "nette.organize",
+        "title": "Nette: Organize Workspace"
       },
       {
-        "command": "dsa-organizer.toggleEnabled",
-        "title": "DSA: Toggle Enabled"
+        "command": "nette.toggleEnabled",
+        "title": "Nette: Toggle Enabled"
       },
       {
-        "command": "dsa-organizer.undoLast",
-        "title": "DSA: Undo Last Move"
+        "command": "nette.undoLast",
+        "title": "Nette: Undo Last Move"
       }
     ],
     "configuration": {
-      "title": "DSA Organizer",
+      "title": "Nette Organizer",
       "properties": {
-        "dsa-organizer.enabled": {
+        "nette.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable or disable DSA Organizer."
+          "description": "Enable or disable Nette Organizer."
         },
-        "dsa-organizer.rootDir": {
+        "nette.rootDir": {
           "type": "string",
           "default": "DSA",
           "description": "Root folder for organized files, relative to workspace. Set to '.' or '' to place files directly in the workspace root with no wrapper folder."
         },
-        "dsa-organizer.confidenceThreshold": {
+        "nette.confidenceThreshold": {
           "type": "number",
           "default": 0.75,
           "description": "Minimum confidence required for automatic move."
         },
-        "dsa-organizer.aiEnabled": {
+        "nette.aiEnabled": {
           "type": "boolean",
           "default": false,
-          "description": "Enable AI-based classification."
+          "description": "Enable AI fallback classification using Groq when heuristic confidence is low."
         },
-        "dsa-organizer.aiEndpoint": {
+        "nette.groqApiKey": {
           "type": "string",
           "default": "",
-          "description": "Endpoint for AI classifier."
+          "description": "Groq API key for AI-assisted classification. Get one free at console.groq.com. Stored in VS Code settings — use workspace settings to avoid committing to git."
         },
-        "dsa-organizer.debounceMs": {
+        "nette.debounceMs": {
           "type": "number",
           "default": 300,
           "description": "Debounce time for file system events in milliseconds."
         },
-        "dsa-organizer.autoNumber": {
+        "nette.autoNumber": {
           "type": "boolean",
           "default": true,
           "description": "Prefix moved files with the smallest available number in the destination folder (e.g. 0_filename.py)"

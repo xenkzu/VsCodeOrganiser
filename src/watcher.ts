@@ -23,7 +23,7 @@ export class FileWatcher extends vscode.Disposable {
     }
 
     const fsPath = document.uri.fsPath;
-    const config = vscode.workspace.getConfiguration('dsa-organizer');
+    const config = vscode.workspace.getConfiguration('nette');
     const debounceMs = config.get<number>('debounceMs', 300);
 
     // Clear existing timeout
@@ -80,7 +80,7 @@ export class FileWatcher extends vscode.Disposable {
       return false;
     }
 
-    const config = vscode.workspace.getConfiguration('dsa-organizer');
+    const config = vscode.workspace.getConfiguration('nette');
     const rootDir = config.get<string>('rootDir', 'DSA');
     
     // Check if path is inside rootDir

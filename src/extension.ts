@@ -15,12 +15,12 @@ function toRelative(absolutePath: string, workspaceRoot: string): string {
 
 export async function activate(context: vscode.ExtensionContext) {
   // 1. Create an output channel
-  const outputChannel = vscode.window.createOutputChannel('DSA Organizer');
-  outputChannel.appendLine('DSA Organizer activated');
+  const outputChannel = vscode.window.createOutputChannel('Nette');
+  outputChannel.appendLine('Nette activated');
 
   // 2. Register organize command first
   context.subscriptions.push(
-    vscode.commands.registerCommand('dsa-organizer.organize', () => {
+    vscode.commands.registerCommand('nette.organize', () => {
       outputChannel.appendLine('Manual organize triggered');
     })
   );
@@ -49,7 +49,6 @@ export async function activate(context: vscode.ExtensionContext) {
   // 3. Instantiate the FileWatcher
   const watcher = new FileWatcher(context, outputChannel, async (signal) => {
     outputChannel.appendLine(`── Signal captured: ${toRelative(signal.filePath, workspaceRoot)} ──`);
-    // outputChannel.appendLine(JSON.stringify(signal, null, 2)); // Redacted absolute paths
 
     // Step 1: heuristic
     const heuristicResults = classifyHeuristic(signal);
@@ -60,7 +59,12 @@ export async function activate(context: vscode.ExtensionContext) {
       : null;
 
     // Step 3: merge
-    const merged = mergeResults(heuristicResults, ruleResult);
+    const merged = await mergeResults(
+      heuristicResults, 
+      ruleResult, 
+      signal, 
+      outputChannel
+    );
 
     // Step 4: log outcome
     outputChannel.appendLine('── Classification outcome ──');

@@ -67,4 +67,5 @@ export interface OrganizerConfig {
   learned: LearnedPattern[];
   autoNumber?: boolean; // prefix moved files with smallest available number
   folderMap?: Record<string, string>; // topic/subtopic -> physical folder path
+  aiEndpoint?: string; // Optional override for the AI classifier endpoint
 }

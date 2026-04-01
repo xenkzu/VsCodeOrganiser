@@ -35,9 +35,9 @@ export class FileMover {
     // 2. Register commands BEFORE creating status bar items
     context.subscriptions.push(
       vscode.commands.registerCommand(
-        'dsa-organizer.toggleEnabled',
+        'nette.toggleEnabled',
         async () => {
-          const config = vscode.workspace.getConfiguration('dsa-organizer');
+          const config = vscode.workspace.getConfiguration('nette');
           const current = config.get<boolean>('enabled', true);
           await config.update(
             'enabled',
@@ -51,7 +51,7 @@ export class FileMover {
 
     context.subscriptions.push(
       vscode.commands.registerCommand(
-        'dsa-organizer.undoLast',
+        'nette.undoLast',
         async () => {
           await this.undo();
         }
@@ -63,7 +63,7 @@ export class FileMover {
       vscode.StatusBarAlignment.Left,
       100
     );
-    this.toggleItem.command = 'dsa-organizer.toggleEnabled';
+    this.toggleItem.command = 'nette.toggleEnabled';
     this.updateToggleItem();
     this.toggleItem.show();
     context.subscriptions.push(this.toggleItem);
@@ -73,22 +73,22 @@ export class FileMover {
       vscode.StatusBarAlignment.Left,
       99
     );
-    this.notifyItem.command = 'dsa-organizer.undoLast';
+    this.notifyItem.command = 'nette.undoLast';
     context.subscriptions.push(this.notifyItem);
     // notifyItem starts hidden — shown only after a move
   }
 
   private updateToggleItem(): void {
     const enabled = vscode.workspace
-      .getConfiguration('dsa-organizer')
+      .getConfiguration('nette')
       .get<boolean>('enabled', true);
     if (enabled) {
-      this.toggleItem.text = '$(folder-library) DSA: ON';
-      this.toggleItem.tooltip = 'DSA Organizer is active — click to disable';
+      this.toggleItem.text = '$(folder-library) Nette: ON';
+      this.toggleItem.tooltip = 'Nette Organizer is active — click to disable';
       this.toggleItem.color = undefined;
     } else {
-      this.toggleItem.text = '$(folder-library) DSA: OFF';
-      this.toggleItem.tooltip = 'DSA Organizer is paused — click to enable';
+      this.toggleItem.text = '$(folder-library) Nette: OFF';
+      this.toggleItem.tooltip = 'Nette Organizer is paused — click to enable';
       this.toggleItem.color = new vscode.ThemeColor('statusBarItem.warningForeground');
     }
   }
@@ -99,7 +99,7 @@ export class FileMover {
   ): string {
     // Read the config flag
     const autoNumber = vscode.workspace
-      .getConfiguration('dsa-organizer')
+      .getConfiguration('nette')
       .get<boolean>('autoNumber', true);
 
     if (!autoNumber) {
@@ -141,7 +141,7 @@ export class FileMover {
     result: ClassificationResult,
     organizerConfig: OrganizerConfig | null = null
   ): Promise<boolean> {
-    const enabled = vscode.workspace.getConfiguration('dsa-organizer').get<boolean>('enabled', true);
+    const enabled = vscode.workspace.getConfiguration('nette').get<boolean>('enabled', true);
     if (!enabled) {
       return false;
     }
@@ -151,16 +151,12 @@ export class FileMover {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
     
     const rawRootDir = vscode.workspace
-      .getConfiguration('dsa-organizer')
+      .getConfiguration('nette')
       .get<string>('rootDir', 'DSA');
 
     const useRootDir = rawRootDir &&
       rawRootDir.trim() !== '' &&
       rawRootDir.trim() !== '.';
-
-    this.outputChannel.appendLine(`[DEBUG] rawRootDir: "${rawRootDir}"`);
-    this.outputChannel.appendLine(`[DEBUG] useRootDir: ${useRootDir}`);
-    this.outputChannel.appendLine(`[DEBUG] result.targetPath incoming: "${result.targetPath}"`);
 
     // result.targetPath is now a clean topic path e.g. "Trees/BinaryTree"
     // Apply folderMap FIRST before anything else
@@ -225,196 +221,121 @@ export class FileMover {
         return false;
       }
     } catch {
-      this.outputChannel.appendLine('Move aborted: could not stat source file');
       return false;
     }
 
-    if (signal.filePath === destPath) {
-      this.outputChannel.appendLine('Move aborted: file is already in the correct location');
-      return false;
-    }
-
-    // Resolve both paths to their real canonical forms before comparing
-    const resolvedWorkspace = (typeof fs.realpathSync.native === 'function')
-      ? (() => {
-          try { return fs.realpathSync(workspaceRoot); }
-          catch { return path.resolve(workspaceRoot); }
-        })()
-      : path.resolve(workspaceRoot);
-
-    const resolvedDest = path.resolve(destDir);
-
-    // Normalize to lowercase on Windows for case-insensitive comparison
-    const normalize = (p: string) =>
-      process.platform === 'win32' ? p.toLowerCase() : p;
-
-    if (!normalize(resolvedDest).startsWith(normalize(resolvedWorkspace) + path.sep) &&
-        normalize(resolvedDest) !== normalize(resolvedWorkspace)) {
-      this.outputChannel.appendLine('Move aborted: path traversal attempt detected');
-      return false;
-    }
-
-    // STEP 3 — COLLISION HANDLING
-    if (fs.existsSync(destPath)) {
-      const ext = path.extname(numberedFileName);
-      const base = path.basename(numberedFileName, ext);
-      let counter = 1;
-      while (fs.existsSync(destPath)) {
-        destPath = path.join(destDir, `${base}_${counter}${ext}`);
-        counter++;
+    // STEP 3 — RESOLVE CANONICAL PATHS (Path Traversal Protection)
+    // We must ensure the destination is inside the workspace root
+    try {
+      if (!fs.existsSync(destDir)) {
+        fs.mkdirSync(destDir, { recursive: true });
       }
-      this.outputChannel.appendLine(`  Name collision — renamed to: ${path.basename(destPath)}`);
-    }
 
-    // STEP 4 — CREATE DESTINATION DIRECTORY
-    try {
-      fs.mkdirSync(destDir, { recursive: true });
-    } catch (err) {
-      this.outputChannel.appendLine(`Move aborted: could not create directory: ${err}`);
-      return false;
-    }
+      const realWorkspaceRoot = fs.realpathSync(workspaceRoot).toLowerCase();
+      const realDestPath = path.resolve(destPath).toLowerCase();
 
-    // STEP 5 — MOVE THE FILE
-    try {
-      fs.renameSync(signal.filePath, destPath);
-    } catch (err: unknown) {
-      try {
-        fs.copyFileSync(signal.filePath, destPath);
-        fs.unlinkSync(signal.filePath);
-      } catch (fallbackErr) {
-        this.outputChannel.appendLine(`Move failed: ${fallbackErr}`);
+      // On Windows, resolve() can return paths with different drive letters (e.g. C: vs c:)
+      // so we normalize and check start
+      if (!realDestPath.startsWith(realWorkspaceRoot)) {
+        this.outputChannel.appendLine(`Security Alert: Path traversal blocked. Target: ${realDestPath}`);
         return false;
       }
+    } catch (err: any) {
+      this.outputChannel.appendLine(`Move aborted: path resolution failed: ${err.message}`);
+      return false;
     }
 
-    // STEP 9 — Close stale tab and reopen at new path
+    // STEP 4 — CHECK FOR COLLISION
+    if (fs.existsSync(destPath)) {
+      this.outputChannel.appendLine(`File already exists at destination: ${toRelative(destPath, workspaceRoot)}`);
+      return false;
+    }
+
+    // STEP 5 — PERFORM ATOMIC MOVE
     try {
-      // Find and close the tab showing the old file path
-      for (const tabGroup of vscode.window.tabGroups.all) {
-        for (const tab of tabGroup.tabs) {
-          const input = tab.input;
-          if (
-            input instanceof vscode.TabInputText &&
-            input.uri.fsPath === signal.filePath
-          ) {
-            await vscode.window.tabGroups.close(tab);
-            break;
-          }
-        }
+      fs.renameSync(signal.filePath, destPath);
+    } catch (err: any) {
+      // Fallback for cross-device moves
+      if (err.code === 'EXDEV') {
+        fs.copyFileSync(signal.filePath, destPath);
+        fs.unlinkSync(signal.filePath);
+      } else {
+        throw err;
       }
-
-      // Open the file at its new location
-      const newUri = vscode.Uri.file(destPath);
-      const doc = await vscode.workspace.openTextDocument(newUri);
-      await vscode.window.showTextDocument(doc, {
-        preview: false,      // open as a permanent tab, not a preview
-        preserveFocus: false // bring it into focus
-      });
-    } catch (err) {
-      // Non-fatal — log but continue
-      this.outputChannel.appendLine(`Warning: could not reopen tab: ${err}`);
     }
 
-    // STEP 6 — RECORD THE MOVE
-    const record: MoveRecord = {
+    // STEP 6 — RECORD FOR UNDO
+    this.undoStack.push({
       originalPath: signal.filePath,
       newPath: destPath,
       timestamp: Date.now(),
-      result
-    };
-    this.undoStack.push(record);
+      result: result
+    });
     if (this.undoStack.length > this.MAX_UNDO) {
       this.undoStack.shift();
     }
 
-    // STEP 7 — WRITE HISTORY LOG
-    const historyDir = path.join(workspaceRoot, '.dsa-organizer');
-    const historyPath = path.join(historyDir, 'history.json');
-    try {
-      fs.mkdirSync(historyDir, { recursive: true });
-      let history: MoveRecord[] = [];
-      if (fs.existsSync(historyPath)) {
-        history = JSON.parse(fs.readFileSync(historyPath, 'utf8'));
-      }
-      history.push(record);
-      // Keep only the last 500 records to prevent unbounded file growth
-      if (history.length > 500) {
-        history = history.slice(-500);
-      }
-      fs.writeFileSync(historyPath, JSON.stringify(history, null, 2));
-    } catch (err) {
-      this.outputChannel.appendLine(`Warning: could not write history: ${err}`);
-    }
+    // STEP 7 — REVEAL IN SIDEBAR
+    vscode.commands.executeCommand('revealInExplorer', vscode.Uri.file(destPath));
 
-    // STEP 8 — SHOW STATUS BAR NOTIFICATION
-    this.notifyItem.text = `$(file-symlink-file) Moved → ${result.topic}/${result.subtopic} $(undo)`;
-    this.notifyItem.tooltip = `${fileName} moved to ${result.targetPath}\nClick to undo`;
+    // STEP 8 — STATUS BAR NOTIFICATION
+    this.notifyItem.text = `$(check) Moved to ${path.basename(path.dirname(destPath))}`;
+    this.notifyItem.tooltip = `Undo move of ${path.basename(destPath)}`;
     this.notifyItem.show();
 
+    // Auto-hide notification after 10 seconds
     setTimeout(() => {
       this.notifyItem.hide();
-    }, 8000);
+    }, 10000);
 
-    // STEP 9 (LOGGING)
-    this.outputChannel.appendLine(
-      `  Moved: ${fileName} → ${toRelative(destPath, workspaceRoot)} in ${result.targetPath}`
-    );
+    // STEP 9 — TAB MANAGEMENT
+    // VS Code's editor still points to the old path (strikethrough or error).
+    // Close the old tab and open the new one.
+    try {
+      for (const tabGroup of vscode.window.tabGroups.all) {
+        for (const tab of tabGroup.tabs) {
+          if (tab.input instanceof vscode.TabInputText && 
+              tab.input.uri.fsPath.toLowerCase() === signal.filePath.toLowerCase()) {
+            await vscode.window.tabGroups.close(tab);
+          }
+        }
+      }
+      // Re-open at new path
+      const doc = await vscode.workspace.openTextDocument(destPath);
+      await vscode.window.showTextDocument(doc, { preview: false });
+    } catch (err: any) {
+      this.outputChannel.appendLine(`Tab management warning: ${err.message}`);
+    }
+
+    this.outputChannel.appendLine(`Successfully moved: ${path.basename(signal.filePath)} → ${path.basename(path.dirname(destPath))}/`);
     return true;
   }
 
-  public async undo(): Promise<void> {
-    if (this.undoStack.length === 0) {
-      vscode.window.showInformationMessage('DSA Organizer: nothing to undo');
-      return;
+  public async undo(): Promise<boolean> {
+    const record = this.undoStack.pop();
+    if (!record) {
+      vscode.window.showInformationMessage('No moves left to undo.');
+      return false;
     }
-
-    const record = this.undoStack.pop()!;
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-
-    if (!fs.existsSync(record.newPath)) {
-      vscode.window.showWarningMessage(`Cannot undo: file no longer exists at ${record.newPath}`);
-      return;
-    }
-
-    const originalDir = path.dirname(record.originalPath);
-    fs.mkdirSync(originalDir, { recursive: true });
 
     try {
+      const destDir = path.dirname(record.originalPath);
+      if (!fs.existsSync(destDir)) {
+        fs.mkdirSync(destDir, { recursive: true });
+      }
+
       fs.renameSync(record.newPath, record.originalPath);
-    } catch {
-      try {
-        fs.copyFileSync(record.newPath, record.originalPath);
-        fs.unlinkSync(record.newPath);
-      } catch (err) {
-        vscode.window.showErrorMessage(`Undo failed: ${err}`);
-        return;
-      }
+      this.outputChannel.appendLine(`Undo successful: Moved back to ${record.originalPath}`);
+      this.notifyItem.hide();
+      return true;
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Undo failed: ${err.message}`);
+      return false;
     }
-
-    // Step 6: Clean up empty destination directory
-    try {
-      const destDirAlt = path.dirname(record.newPath);
-      const remaining = fs.readdirSync(destDirAlt);
-      if (remaining.length === 0) {
-        fs.rmdirSync(destDirAlt);
-      }
-    } catch {
-      // Non-fatal
-    }
-
-    // Step 7: Update UI
-    this.notifyItem.text = `$(undo) Restored: ${path.basename(record.originalPath)}`;
-    this.notifyItem.tooltip = `File restored to ${toRelative(record.originalPath, workspaceRoot)}`;
-    this.notifyItem.show();
-    setTimeout(() => this.notifyItem.hide(), 5000);
-
-    this.outputChannel.appendLine(`  Undone: ${toRelative(record.newPath, workspaceRoot)} → ${toRelative(record.originalPath, workspaceRoot)}`);
-    vscode.window.showInformationMessage(`Restored: ${path.basename(record.originalPath)}`);
   }
 
-  public dispose(): void {
+  public dispose() {
     this.toggleItem.dispose();
     this.notifyItem.dispose();
-    this.undoStack = [];
   }
 }

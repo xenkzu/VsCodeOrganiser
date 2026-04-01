@@ -172,7 +172,7 @@ function classifyWithRules(signal, config) {
 }
 async function learnFromUserChoice(signal, chosen, workspaceRoot, outputChannel) {
     const configPath = path.join(workspaceRoot, 'organizer.json');
-    const rootDir = vscode.workspace.getConfiguration('dsa-organizer').get('rootDir', 'DSA');
+    const rootDir = vscode.workspace.getConfiguration('nette').get('rootDir', 'DSA');
     let config;
     try {
         if (fs.existsSync(configPath)) {

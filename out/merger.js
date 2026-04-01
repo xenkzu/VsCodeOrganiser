@@ -35,25 +35,28 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.mergeResults = mergeResults;
 const vscode = __importStar(require("vscode"));
-function mergeResults(heuristic, rule) {
-    // 1. If rule is not null → return rule immediately (rules always win)
+const ai_1 = require("./classifier/ai");
+async function mergeResults(heuristic, rule, signal, outputChannel) {
+    // Rules always win
     if (rule) {
         return { ...rule, confidence: 1.0, userConfirmationRequired: false };
     }
-    // 2. If heuristic is empty → return null
+    // Nothing from heuristic at all
     if (heuristic.length === 0) {
         return null;
     }
-    // 3. Take the top heuristic result
     const topHeuristic = heuristic[0];
-    // 4. Read the confidence threshold
     const threshold = vscode.workspace
-        .getConfiguration('dsa-organizer')
+        .getConfiguration('nette')
         .get('confidenceThreshold', 0.75);
-    // 5. If heuristic[0].confidence < threshold
     if (topHeuristic.confidence < threshold) {
+        // Try AI before giving up
+        const aiResult = await (0, ai_1.classifyWithAI)(signal, outputChannel);
+        if (aiResult) {
+            return aiResult;
+        }
+        // AI unavailable or failed — fall back to heuristic with confirmation flag
         return { ...topHeuristic, userConfirmationRequired: true };
     }
-    // 6. Otherwise
     return { ...topHeuristic, userConfirmationRequired: false };
 }
