@@ -66,4 +66,5 @@ export interface OrganizerConfig {
   rules: OrganizerRule[];
   learned: LearnedPattern[];
   autoNumber?: boolean; // prefix moved files with smallest available number
+  folderMap?: Record<string, string>; // topic/subtopic -> physical folder path
 }

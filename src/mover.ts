@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as vscode from 'vscode';
-import { FileSignal, ClassificationResult, MoveRecord } from './types';
+import { FileSignal, ClassificationResult, MoveRecord, OrganizerConfig } from './types';
 
 function sanitizeFolderSegment(segment: string): string {
   // Remove any path traversal sequences, null bytes, and invalid chars
@@ -138,7 +138,8 @@ export class FileMover {
 
   public async move(
     signal: FileSignal,
-    result: ClassificationResult
+    result: ClassificationResult,
+    organizerConfig: OrganizerConfig | null = null
   ): Promise<boolean> {
     const enabled = vscode.workspace.getConfiguration('dsa-organizer').get<boolean>('enabled', true);
     if (!enabled) {
@@ -149,18 +150,56 @@ export class FileMover {
     const fileName = path.basename(signal.filePath);
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
     
-    const safeTargetPath = result.targetPath
-      .split(/[/\\]/)
-      .map(sanitizeFolderSegment)
-      .filter(s => s.length > 0)
-      .join(path.sep);
+    const rawRootDir = vscode.workspace
+      .getConfiguration('dsa-organizer')
+      .get<string>('rootDir', 'DSA');
 
-    if (safeTargetPath.length === 0) {
-      this.outputChannel.appendLine('Move aborted: invalid target path after sanitization');
-      return false;
+    const useRootDir = rawRootDir &&
+      rawRootDir.trim() !== '' &&
+      rawRootDir.trim() !== '.';
+
+    this.outputChannel.appendLine(`[DEBUG] rawRootDir: "${rawRootDir}"`);
+    this.outputChannel.appendLine(`[DEBUG] useRootDir: ${useRootDir}`);
+    this.outputChannel.appendLine(`[DEBUG] result.targetPath incoming: "${result.targetPath}"`);
+
+    // result.targetPath is now a clean topic path e.g. "Trees/BinaryTree"
+    // Apply folderMap FIRST before anything else
+    let resolvedFolder = result.targetPath.replace(/\\/g, '/');
+
+    if (organizerConfig?.folderMap) {
+      const map = organizerConfig.folderMap;
+
+      // Try most specific key first: "Trees/BinaryTree"
+      if (map[resolvedFolder]) {
+        resolvedFolder = map[resolvedFolder];
+      } else {
+        // Try topic-only key: "Trees"
+        const topicOnly = resolvedFolder.split('/')[0];
+        if (map[topicOnly]) {
+          resolvedFolder = map[topicOnly];
+        }
+      }
     }
 
-    let destDir = path.join(workspaceRoot, safeTargetPath);
+    this.outputChannel.appendLine(`[DEBUG] resolvedFolder after folderMap: "${resolvedFolder}"`);
+    this.outputChannel.appendLine(`[DEBUG] organizerConfig present: ${!!organizerConfig}`);
+    this.outputChannel.appendLine(`[DEBUG] folderMap present: ${!!organizerConfig?.folderMap}`);
+    if (organizerConfig?.folderMap) {
+      this.outputChannel.appendLine(`[DEBUG] folderMap keys: ${Object.keys(organizerConfig.folderMap).join(', ')}`);
+    }
+
+    // Now build the absolute destination directory
+    let destDir: string;
+    if (useRootDir) {
+      destDir = path.join(workspaceRoot, rawRootDir.trim(), resolvedFolder);
+    } else {
+      // rootDir is "." or "" — place directly in workspace root
+      destDir = path.join(workspaceRoot, resolvedFolder);
+    }
+
+    this.outputChannel.appendLine(`[DEBUG] final destDir: "${destDir}"`);
+    this.outputChannel.appendLine(`[DEBUG] workspaceRoot: "${workspaceRoot}"`);
+
     let destPath = path.join(destDir, fileName);
 
     // Apply gap-filling numeric prefix

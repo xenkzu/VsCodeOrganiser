@@ -1,4 +1,3 @@
-import * as vscode from 'vscode';
 import { FileSignal, ClassificationResult } from '../types';
 
 interface RuleEntry {
@@ -132,17 +131,37 @@ const TOPICS: TopicDescriptor[] = [
     subtopic: 'SlidingWindow',
     folder: 'Arrays/SlidingWindow',
     rules: [
-      { fields: ['variableNames'], match: ['left', 'right'], requireAll: ['left', 'right'], excludeIf: ['root', 'children', 'parent'], weight: 0.60 },
-      { fields: ['methodNames'], match: ['maxSubarray', 'longestSubstring', 'minWindow', 'slidingWindow', 'maxWindow'], weight: 0.90 }
+      {
+        // Strong signal — explicit method names only
+        fields: ['methodNames'],
+        match: [
+          'maxSubarray', 'longestSubstring', 'minWindow',
+          'slidingWindow', 'maxWindow', 'lengthOfLongestSubstring'
+        ],
+        weight: 0.90
+      },
+      {
+        // Medium signal — rawSnippet must explicitly mention window
+        fields: [],
+        match: [],
+        rawContains: 'window',
+        weight: 0.65
+      },
+      {
+        // Weak signal — left+right vars BUT only if window comment present
+        fields: ['variableNames'],
+        match: ['left', 'right'],
+        requireAll: ['left', 'right'],
+        excludeIf: ['root', 'children', 'parent', 'head', 'node'],
+        rawContains: 'window',
+        weight: 0.50
+      }
     ]
   }
 ];
 
 export function classifyHeuristic(signal: FileSignal): ClassificationResult[] {
   let results: ClassificationResult[] = [];
-  const config = vscode.workspace.getConfiguration('dsa-organizer');
-  const rootDir = config.get<string>('rootDir', 'DSA');
-
   for (const descriptor of TOPICS) {
     let totalScore = 0;
 
@@ -212,11 +231,24 @@ export function classifyHeuristic(signal: FileSignal): ClassificationResult[] {
         subtopic: descriptor.subtopic,
         confidence: Math.min(1.0, totalScore),
         source: 'heuristic',
-        targetPath: `${rootDir}/${descriptor.folder}`,
+        targetPath: descriptor.folder,
         userConfirmationRequired: false
       });
     }
   }
+
+  // Collapse weak subtopic results to parent topic folder
+  results = results.map(r => {
+    if (r.confidence < 0.55 && r.targetPath.includes('/')) {
+      const parentFolder = r.targetPath.split('/')[0];
+      return {
+        ...r,
+        subtopic: 'General',
+        targetPath: parentFolder
+      };
+    }
+    return r;
+  });
 
   // STEP 3: NODE DISAMBIGUATION
   const btResult = results.find(r => r.subtopic === 'BinaryTree');

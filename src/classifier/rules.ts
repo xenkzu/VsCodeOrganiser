@@ -45,7 +45,8 @@ export async function loadRules(workspaceRoot: string): Promise<OrganizerConfig 
     return {
       version: parsed.version,
       rules: parsed.rules,
-      learned: Array.isArray(parsed.learned) ? parsed.learned : []
+      learned: Array.isArray(parsed.learned) ? parsed.learned : [],
+      folderMap: typeof parsed.folderMap === 'object' ? parsed.folderMap : undefined
     };
   } catch (err) {
     console.warn('Failed to parse organizer.json:', err);
@@ -54,9 +55,7 @@ export async function loadRules(workspaceRoot: string): Promise<OrganizerConfig 
 }
 
 export function classifyWithRules(signal: FileSignal, config: OrganizerConfig): ClassificationResult | null {
-  const rootDir = vscode.workspace.getConfiguration('dsa-organizer').get<string>('rootDir', 'DSA');
-
-  // PART A — User-defined rules
+  // PART A — User-defined hard rules
   const sortedRules = [...config.rules].sort((a, b) => b.priority - a.priority);
   for (const rule of sortedRules) {
     const results: boolean[] = [];
@@ -93,7 +92,7 @@ export function classifyWithRules(signal: FileSignal, config: OrganizerConfig): 
         subtopic: rule.target.subtopic,
         confidence: 1.0,
         source: 'rules',
-        targetPath: `${rootDir}/${rule.target.folder}`,
+        targetPath: rule.target.folder,
         userConfirmationRequired: false
       };
     }
@@ -129,7 +128,7 @@ export function classifyWithRules(signal: FileSignal, config: OrganizerConfig): 
         subtopic: entry.target.subtopic,
         confidence: 0.85,
         source: 'rules',
-        targetPath: `${rootDir}/${entry.target.folder}`,
+        targetPath: entry.target.folder,
         userConfirmationRequired: false
       };
     }
@@ -141,7 +140,8 @@ export function classifyWithRules(signal: FileSignal, config: OrganizerConfig): 
 export async function learnFromUserChoice(
   signal: FileSignal,
   chosen: ClassificationResult,
-  workspaceRoot: string
+  workspaceRoot: string,
+  outputChannel: vscode.OutputChannel
 ): Promise<void> {
   const configPath = path.join(workspaceRoot, 'organizer.json');
   const rootDir = vscode.workspace.getConfiguration('dsa-organizer').get<string>('rootDir', 'DSA');
@@ -163,6 +163,11 @@ export async function learnFromUserChoice(
     ? chosen.targetPath.substring(`${rootDir}/`.length) 
     : chosen.targetPath;
 
+  const EXCLUDED_METHOD_NAMES = [
+    'main', '__init__', 'toString', 'equals',
+    'hashCode', 'constructor', 'init'
+  ];
+
   const newPattern: LearnedPattern = {
     pattern: {
       classNames: signal.classNames.length > 0
@@ -173,6 +178,7 @@ export async function learnFromUserChoice(
         : undefined,
       methodNames: signal.methodNames.length > 0
         ? signal.methodNames
+            .filter(m => !EXCLUDED_METHOD_NAMES.includes(m.toLowerCase()))
             .map(sanitizeIdentifier)
             .filter(s => s.length > 0)
             .slice(0, 50)          // cap at 50 method names max
@@ -185,6 +191,17 @@ export async function learnFromUserChoice(
     },
     timesApplied: 1
   };
+
+  const hasUsefulPattern =
+    (newPattern.pattern.classNames?.length ?? 0) > 0 ||
+    (newPattern.pattern.methodNames?.length ?? 0) > 0;
+
+  if (!hasUsefulPattern) {
+    outputChannel.appendLine(
+      '  Skipped learning: no distinctive pattern found in this file'
+    );
+    return;
+  }
 
   const existingEntry = config.learned.find(entry => 
     entry.target.topic === chosen.topic &&

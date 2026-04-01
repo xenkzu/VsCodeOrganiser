@@ -1,9 +1,9 @@
-# DSA Workspace Organizer
+# Nette
 
 > A VS Code extension that automatically moves your DSA practice files into
 > structured folders based on what the code actually does — not what you named it.
 
-![Version](https://img.shields.io/badge/version-0.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
 ![VS Code](https://img.shields.io/badge/vscode-%5E1.85.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -17,7 +17,7 @@ tree implementation means scrolling through a flat list of vague names.
 
 ## What it does
 
-DSA Workspace Organizer watches every file you save, reads its content, infers the
+Nette watches every file you save, reads its content, infers the
 underlying data structure or algorithm topic, and moves the file into a clean folder
 hierarchy automatically. No renaming required. No configuration required to get started.
 
@@ -67,8 +67,8 @@ notification appears with a one-click undo button.
 
 Install from the VS Code Marketplace (coming soon), or install manually:
 ```bash
-git clone https://github.com/your-username/dsa-organizer
-cd dsa-organizer
+git clone https://github.com/your-username/nette
+cd nette
 npm install
 npm run package
 # Then in VS Code: Extensions → ⋯ → Install from VSIX
@@ -78,7 +78,7 @@ npm run package
 
 ## Configuration
 
-All settings are available under `File → Preferences → Settings → DSA Organizer`.
+All settings are available under `File → Preferences → Settings → Nette`.
 
 | Setting | Type | Default | Description |
 |---|---|---|---|
@@ -186,4 +186,4 @@ test case in `test/heuristic.test.ts` for any new topic descriptor.
 
 ## License
 
-MIT © 2024
+MIT © 2026

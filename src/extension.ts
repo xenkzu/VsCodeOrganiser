@@ -87,22 +87,19 @@ export async function activate(context: vscode.ExtensionContext) {
       }
 
       const parts = pick.split('/');
-      const rootDir = vscode.workspace
-        .getConfiguration('dsa-organizer')
-        .get<string>('rootDir', 'DSA');
 
       const manualResult: ClassificationResult = {
         topic: parts[0],
         subtopic: parts[1] ?? 'General',
         confidence: 1.0,
         source: 'user',
-        targetPath: `${rootDir}/${pick}`,
+        targetPath: pick,
         userConfirmationRequired: false
       };
 
       const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-      await learnFromUserChoice(signal, manualResult, workspaceRoot);
-      await mover.move(signal, manualResult);
+      await learnFromUserChoice(signal, manualResult, workspaceRoot, outputChannel);
+      await mover.move(signal, manualResult, organizerConfig);
       return;
     }
 
@@ -154,36 +151,33 @@ export async function activate(context: vscode.ExtensionContext) {
         if (!manualPick) { return; }
 
         const parts = manualPick.split('/');
-        const rootDir = vscode.workspace
-          .getConfiguration('dsa-organizer')
-          .get<string>('rootDir', 'DSA');
 
         const manualResult: ClassificationResult = {
           topic: parts[0],
           subtopic: parts[1] ?? 'General',
           confidence: 1.0,
           source: 'user',
-          targetPath: `${rootDir}/${manualPick}`,
+          targetPath: manualPick,
           userConfirmationRequired: false
         };
 
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-        await learnFromUserChoice(signal, manualResult, workspaceRoot);
-        await mover.move(signal, manualResult);
+        await learnFromUserChoice(signal, manualResult, workspaceRoot, outputChannel);
+        await mover.move(signal, manualResult, organizerConfig);
         return;
       }
 
       // User picked one of the top heuristic suggestions
       if (pick.result) {
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-        await learnFromUserChoice(signal, pick.result, workspaceRoot);
-        await mover.move(signal, pick.result);
+        await learnFromUserChoice(signal, pick.result, workspaceRoot, outputChannel);
+        await mover.move(signal, pick.result, organizerConfig);
       }
       return;
     }
 
     // High confidence — move automatically
-    await mover.move(signal, merged);
+    await mover.move(signal, merged, organizerConfig);
 
     outputChannel.show(true);
   });

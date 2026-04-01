@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "rules": [],
+  "learned": [],
+  "folderMap": {
+    "Trees/BinaryTree": "BinaryTree",
+    "Trees/BST": "BinaryTree",
+    "Trees/Trie": "BinaryTree",
+    "Trees": "BinaryTree",
+    "LinkedLists/Singly": "Linked List",
+    "LinkedLists": "Linked List",
+    "Graphs/DFS": "Graphs",
+    "Graphs/BFS": "Graphs",
+    "Graphs": "Graphs",
+    "DynamicProgramming/Memo": "Recursion",
+    "DynamicProgramming/Tabulation": "Recursion",
+    "DynamicProgramming": "Recursion",
+    "Sorting": "Sorting and Searching",
+    "Heap": "Heap",
+    "Backtracking": "Backtracking",
+    "Arrays/SlidingWindow": "Array",
+    "Arrays": "Array"
+  }
+}

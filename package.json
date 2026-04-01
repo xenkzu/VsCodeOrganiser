@@ -1,15 +1,43 @@
 {
-  "name": "dsa-organizer",
-  "displayName": "DSA Workspace Organizer",
-  "description": "Automatically organizes your DSA files into topic-based folders.",
-  "version": "0.1.0",
-  "publisher": "Yash Kaul",
+  "name": "nette",
+  "displayName": "Nette",
+  "description": "Automatically organizes DSA practice files into topic folders based on code content: no naming conventions required.",
+  "version": "1.0.0",
+  "publisher": "YashKaul",
+  "icon": "assets/icon.png",
+  "galleryBanner": {
+    "color": "#1e1e2e",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Formatters",
+    "Education"
   ],
+  "keywords": [
+    "dsa",
+    "algorithms",
+    "data structures",
+    "organizer",
+    "workspace",
+    "leetcode",
+    "competitive programming",
+    "file organization",
+    "productivity",
+    "nette"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_USERNAME/nette"
+  },
+  "bugs": {
+    "url": "https://github.com/YOUR_USERNAME/nette/issues"
+  },
+  "homepage": "https://github.com/YOUR_USERNAME/nette#readme",
+  "license": "MIT",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -40,7 +68,7 @@
         "dsa-organizer.rootDir": {
           "type": "string",
           "default": "DSA",
-          "description": "Target root directory for organized files."
+          "description": "Root folder for organized files, relative to workspace. Set to '.' or '' to place files directly in the workspace root with no wrapper folder."
         },
         "dsa-organizer.confidenceThreshold": {
           "type": "number",
@@ -71,15 +99,18 @@
     }
   },
   "scripts": {
-    "compile": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --platform=node",
-    "watch": "npm run compile -- --watch",
-    "pretest": "npm run compile",
-    "test": "node ./out/test/runTest.js"
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package --no-dependencies",
+    "publish": "vsce publish"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
     "@types/vscode": "^1.85.0",
     "@vscode/test-electron": "^2.3.8",
+    "@vscode/vsce": "^2.22.0",
     "esbuild": "^0.19.11",
     "typescript": "^5.3.3"
   }
