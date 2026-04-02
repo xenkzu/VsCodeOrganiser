@@ -11,7 +11,7 @@ export class FileWatcher extends vscode.Disposable {
   constructor(
     private context: vscode.ExtensionContext,
     private outputChannel: vscode.OutputChannel,
-    private onSignal: (signal: FileSignal) => void
+    private onSignal: (signal: FileSignal) => Promise<void>
   ) {
     super(() => this.disposeInternal());
 
@@ -64,7 +64,7 @@ export class FileWatcher extends vscode.Disposable {
       this.activeProcessingCount++;
       try {
         const signal = extractSignals(document);
-        this.onSignal(signal);
+        await this.onSignal(signal);
       } finally {
         this.activeProcessingCount--;
       }

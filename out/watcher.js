@@ -83,7 +83,7 @@ class FileWatcher extends vscode.Disposable {
             this.activeProcessingCount++;
             try {
                 const signal = (0, reader_1.extractSignals)(document);
-                this.onSignal(signal);
+                await this.onSignal(signal);
             }
             finally {
                 this.activeProcessingCount--;

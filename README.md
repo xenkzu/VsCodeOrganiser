@@ -1,7 +1,6 @@
-# Nette
+# Nette - Smart File Organizer
 
-> A VS Code extension that automatically moves your DSA practice files into
-> structured folders based on what the code actually does — not what you named it.
+> Save a DSA file. It's already sorted. You didn't do anything.
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
 ![VS Code](https://img.shields.io/badge/vscode-%5E1.85.0-blue)
@@ -11,96 +10,117 @@
 
 ## The problem
 
-When practicing DSA, files accumulate fast. You create `solution.py`, `0_basic.py`,
-`test2.java` — meaningful at the time, useless a week later. Finding your own binary
-tree implementation means scrolling through a flat list of vague names.
+You're grinding LeetCode or working through a DSA course. Files pile up fast.
 
-## What it does
-
-Nette watches every file you save, reads its content, infers the
-underlying data structure or algorithm topic, and moves the file into a clean folder
-hierarchy automatically. No renaming required. No configuration required to get started.
-
----
-
-## Features
-
-- **Content-based classification** — reads class names, method names, variable names,
-  and imports to determine topic. A file named `0_basic.py` containing a `TreeNode`
-  class goes to `DSA/Trees/BinaryTree/` automatically.
-
-- **Smart disambiguation** — a generic `Node` class with `next` goes to LinkedLists.
-  The same class with `left` and `right` goes to Trees. The classifier resolves this
-  without any input from you.
-
-- **User rule engine** — drop an `organizer.json` file in your workspace root to define
-  your own routing rules. Rules always override the classifier.
-
-- **Learns from corrections** — when you manually pick a folder from the Quick Pick
-  menu, the extension remembers the pattern and applies it automatically next time.
-
-- **Optional AI fallback** — for ambiguous files the heuristic cannot resolve, you can
-  configure an LLM endpoint (Anthropic, OpenAI, or local Ollama) to make the call.
-
-- **Safe moves with undo** — every file move is logged. Click the status bar item or
-  run the undo command to restore any file to its original location instantly.
-
----
-
-## How it works
-
-**1. Watch** — the extension listens for every file save in your workspace. It ignores
-`node_modules`, build outputs, hidden folders, and files under 5 lines.
-
-**2. Classify** — the content reader extracts class names, method names, sentinel
-variable names, and imports using per-language regex patterns. The heuristic classifier
-scores the file against 12 DSA topic descriptors using a weighted rule system. If
-confidence is below the threshold, you are asked to confirm.
-
-**3. Move** — the file is moved into the appropriate subfolder inside your configured
-root directory (default: `DSA/`). Directories are created automatically. A status bar
-notification appears with a one-click undo button.
-
----
-
-## Installation
-
-Install from the VS Code Marketplace (coming soon), or install manually:
-```bash
-git clone https://github.com/your-username/nette
-cd nette
-npm install
-npm run package
-# Then in VS Code: Extensions → ⋯ → Install from VSIX
+```
+workspace/
+├── solution.py
+├── try2.cpp
+├── test_again.java
+├── 0_basic.py
+├── asdf.cpp
+└── untitled3.java
 ```
 
----
+Six files. Zero organization. Which one has your binary tree? Which one is the sliding window attempt? You have no idea without opening each one.
+
+Renaming as you go sounds fine until you're mid-problem and the last thing you want to do is think about folder structure. So you don't. The mess stays.
+
+## What Nette does
+
+Nette is an automatic file organizer for VS Code. Every time you save a file, it reads the code inside — class names, method names, variable patterns, imports — and moves the file into the right folder. No renaming. No tagging. No setup.
+
+**Before Nette:**
+```
+workspace/
+├── solution.py        ← binary tree? linked list? no idea
+├── try2.cpp           ← some graph thing
+├── test_again.java    ← dynamic programming attempt
+└── asdf.cpp           ← ???
+```
+
+**After Nette:**
+```
+workspace/
+└── DSA/
+    ├── Trees/
+    │   └── BinaryTree/
+    │       └── 0_solution.py
+    ├── Graphs/
+    │   └── DFS/
+    │       └── 0_try2.cpp
+    ├── DynamicProgramming/
+    │   └── Tabulation/
+    │       └── 0_test_again.java
+    └── Basic/
+        └── 0_asdf.cpp
+```
+
+Same files. Automatically sorted. You never touched the file names.
+
+A file called `0_basic.py` containing a `TreeNode` class goes to `DSA/Trees/BinaryTree/`. A file called `asdf.cpp` with a `dfs` method and a `visited` array goes to `DSA/Graphs/DFS/`. The auto file organizer reads the code, not the name.
+
+## Features
+- **Moves files by content, not name** — it doesn't matter what you called the file. Nette reads the code inside it.
+- **Handles ambiguous code** — a `Node` class with a `next` pointer goes to LinkedLists. The same class with `left` and `right` goes to Trees. Nette resolves this without asking you.
+- **Custom rules** — drop an `organizer.json` file in your workspace to route specific files wherever you want. Your rules always win.
+- **Move/skip prompt for uncertain files** — when Nette isn't sure, it shows a two-button prompt: move to its best guess, or skip. No category dropdowns.
+- **AI fallback for tricky files** — for files the pattern matcher can't place, Nette can call Groq's free LLM API. Totally optional. Works fine without it.
+- **One-click undo** — every move is logged. The status bar shows an undo button after every move. Click it to put the file back instantly.
+- **Works on save** — fires automatically when you save. No commands to run.
+
+## How it works
+When you save a file, Nette does three things fast:
+1. **Read** — it pulls out class names, method names, variable names, imports, and the first few comment lines from your file. Nothing leaves your machine at this step.
+2. **Match** — it runs those signals through a library of 53 DSA topic patterns. A file with class `MinHeap` and a `heapify` method scores high on the Heap pattern. A file with `dp[i][j]` and a method called `longestCommonSubsequence` scores high on Dynamic Programming / String DP. The highest scoring pattern wins.
+3. **Move** — if the score is confident enough, the file moves silently. If it's borderline, you get a two-button prompt. If nothing matches (like a basic utility file with no DSA patterns), Nette skips it and shows a brief status bar note.
+
+The whole thing runs in under a second for most files.
+
+## Setting up AI (optional)
+Nette works without any API key. The pattern matcher handles the vast majority of DSA files on its own.
+
+If you want AI classification for files the matcher can't place, Nette uses Groq — it's free, no credit card required.
+
+To set your key:
+The first time Nette encounters a file it can't classify, you'll see a notification:
+> Nette: No Groq API key found.
+> [Enter Key] [Get Free Key] [Dismiss]
+
+![Nette API Setup Notification](assets/GroqKeySetup.png)
+
+Click **Get Free Key** — your browser opens to `console.groq.com/keys`. Copy your key. VS Code prompts you to paste it:
+> Nette — Groq API Key
+> Paste your key here... (input is masked)
+
+![Nette API Key Input Box](assets/EnterKey.png)
+
+Your key is stored in your OS keychain via VS Code's secret storage. It never appears in `settings.json` or any file on disk.
+
+You can also set or update the key any time via the Command Palette:
+`Ctrl+Shift+P` → **Nette: Set Groq API Key**
 
 ## Configuration
-
-All settings are available under `File → Preferences → Settings → Nette`.
+Settings are under **File → Preferences → Settings → Nette**.
 
 | Setting | Type | Default | Description |
-|---|---|---|---|
-| `dsa-organizer.enabled` | boolean | `true` | Enable or disable the extension globally |
-| `dsa-organizer.rootDir` | string | `"DSA"` | Root folder for organized files, relative to workspace |
-| `dsa-organizer.confidenceThreshold` | number | `0.75` | Minimum confidence (0–1) to move without asking |
-| `dsa-organizer.aiEnabled` | boolean | `false` | Enable LLM fallback for ambiguous files |
-| `dsa-organizer.aiEndpoint` | string | `""` | LLM API endpoint (Anthropic, OpenAI, or Ollama URL) |
-| `dsa-organizer.debounceMs` | number | `300` | Milliseconds to wait after save before classifying |
-
----
+| :--- | :--- | :--- | :--- |
+| `nette.enabled` | boolean | `true` | Turn Nette on or off |
+| `nette.rootDir` | string | `"DSA"` | Root folder for organized files, relative to workspace root. Set to "." to place files directly in the workspace |
+| `nette.confidenceThreshold` | number | `0.55` | How confident Nette needs to be before moving without asking. Lower = more aggressive, higher = more cautious |
+| `nette.aiEnabled` | boolean | `true` | Enable Groq AI fallback for files the pattern matcher can't place |
+| `nette.debounceDelay` | number | `900` | Milliseconds to wait after a save before classifying. Increase if files are being processed twice |
+| `nette.autoNumber` | boolean | `true` | Prefix moved files with the smallest available number in the destination folder (e.g. 0_solution.py, 1_solution.py) |
+| `nette.manualSaveOnly` | boolean | `true` | Only trigger on manual save (Ctrl+S). When on, autosave won't move files |
 
 ## organizer.json
-
-Place this file in your workspace root to define custom rules:
+Drop this file in your workspace root to define your own routing rules:
 ```json
 {
   "version": 1,
   "rules": [
     {
       "id": "leetcode-solutions",
-      "description": "Route files with a Solution class to LeetCode folder",
       "conditions": {
         "classNameContains": "Solution",
         "fileNameContains": "lc"
@@ -117,63 +137,61 @@ Place this file in your workspace root to define custom rules:
   "learned": []
 }
 ```
+Rules run in descending priority order. A matching rule overrides the pattern matcher entirely. The `learned` array is managed automatically — leave it alone.
 
-Rules are evaluated in descending `priority` order. A matching rule always overrides
-the heuristic classifier. The `learned` array is managed automatically — do not edit
-it by hand.
+You can also use `folderMap` to remap Nette's default folder names to your own existing structure:
+```json
+{
+  "version": 1,
+  "rules": [],
+  "learned": [],
+  "folderMap": {
+    "Trees/BinaryTree": "My Trees",
+    "DynamicProgramming": "DP"
+  }
+}
+```
 
 ---
 
 ## Supported languages
 
-| Language | Extensions | Notes |
-|---|---|---|
-| Python | `.py` | Full support including decorator detection (`@lru_cache`) |
-| Java | `.java` | Class, interface, and method extraction |
-| C++ | `.cpp`, `.c` | Struct and class support, include detection |
-| TypeScript | `.ts` | Class, interface, arrow function, and import extraction |
-| JavaScript | `.js` | Same as TypeScript without type annotations |
+| Language | Extensions |
+|---|---|
+| Python | `.py` |
+| Java | `.java` |
+| C++ | `.cpp`, `.c` |
+| TypeScript | `.ts` |
+| JavaScript | `.js` |
 
 ---
 
-## Folder taxonomy
+## Folder structure
+Folders are created on demand — only the ones you actually use appear on disk. The full set of topics Nette knows about:
 
-The default folder hierarchy created inside your `rootDir`:
-DSA/
-├── Trees/
-│   ├── BinaryTree/
-│   ├── BST/
-│   └── Trie/
-├── LinkedLists/
-│   └── Singly/
-├── Graphs/
-│   ├── DFS/
-│   └── BFS/
-├── DynamicProgramming/
-│   ├── Memo/
-│   └── Tabulation/
-├── Sorting/
-├── Heap/
-├── Backtracking/
-└── Arrays/
-└── SlidingWindow/
+- **Trees/** (BinaryTree, BST, Trie, AVLTree, SegmentTree, FenwickTree, SparseTable, NaryTree)
+- **LinkedLists/** (Singly, Doubly, FastSlowPointer)
+- **Graphs/** (DFS, BFS, TopologicalSort, UnionFind, Dijkstra, BellmanFord, FloydWarshall, MST, Bipartite, SCC, Eulerian)
+- **DynamicProgramming/** (Memo, Tabulation, Knapsack, IntervalDP, StringDP, TreeDP, GameTheory)
+- **Strings/** (KMP, RabinKarp, ZAlgorithm, Manacher, SuffixStructures, General)
+- **Matrix/** (Traversal, Islands, GridDP)
+- **Recursion/** (DivideAndConquer, Permutations, Subsets)
+- **AdvancedDS/** (MonotonicStack, LRUCache, Deque, OrderedSet)
+- **Sorting**
+- **Heap**
+- **Backtracking**
+- **TwoPointers**
+- **BinarySearch**
+- **Stack**
+- **Queue**
+- **Hashing**
+- **Greedy**
+- **BitManipulation**
+- **Math**
+- **Geometry**
 
-Folders are created on demand — only the ones you actually use appear on disk.
-
----
-
-## Known limitations
-
-- Works best with object-oriented code that uses recognisable class and method names.
-  A file with only arithmetic operations and no structure will not be classified.
-- AI mode requires you to provide your own API key via the endpoint URL. The key is
-  read from the URL and never logged.
-- Import updates after a file move are best-effort. Complex dynamic imports may not
-  be rewritten correctly.
-- Files with very generic names AND no recognisable patterns will trigger the Quick
-  Pick confirmation menu rather than moving automatically.
-
----
+## Privacy
+Code snippets sent to Groq have secrets automatically scrubbed before transmission — API keys, tokens, and common credential patterns are replaced with `[REDACTED]`. Your Groq API key is stored in your OS keychain via VS Code's secret storage. It never appears in `settings.json` or any file on disk.
 
 ## Contributing
 
@@ -185,5 +203,4 @@ test case in `test/heuristic.test.ts` for any new topic descriptor.
 ---
 
 ## License
-
 MIT © 2026

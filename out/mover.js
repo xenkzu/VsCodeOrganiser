@@ -140,7 +140,9 @@ class FileMover {
     }
     async move(signal, result, organizerConfig = null) {
         const enabled = vscode.workspace.getConfiguration('nette').get('enabled', true);
+        this.outputChannel.appendLine(`[Mover] Attempting move of ${path.basename(signal.filePath)} (Nette Enabled: ${enabled})`);
         if (!enabled) {
+            this.outputChannel.appendLine('[Mover] Skip: Nette is disabled in settings.');
             return false;
         }
         // STEP 1 — RESOLVE DESTINATION PATH
@@ -169,12 +171,12 @@ class FileMover {
                 }
             }
         }
-        this.outputChannel.appendLine(`[DEBUG] resolvedFolder after folderMap: "${resolvedFolder}"`);
-        this.outputChannel.appendLine(`[DEBUG] organizerConfig present: ${!!organizerConfig}`);
-        this.outputChannel.appendLine(`[DEBUG] folderMap present: ${!!organizerConfig?.folderMap}`);
-        if (organizerConfig?.folderMap) {
-            this.outputChannel.appendLine(`[DEBUG] folderMap keys: ${Object.keys(organizerConfig.folderMap).join(', ')}`);
-        }
+        // Security: sanitize every segment of the destination folder
+        resolvedFolder = resolvedFolder
+            .split('/')
+            .map(sanitizeFolderSegment)
+            .filter(s => s.length > 0)
+            .join(path.sep);
         // Now build the absolute destination directory
         let destDir;
         if (useRootDir) {
@@ -184,26 +186,24 @@ class FileMover {
             // rootDir is "." or "" — place directly in workspace root
             destDir = path.join(workspaceRoot, resolvedFolder);
         }
-        this.outputChannel.appendLine(`[DEBUG] final destDir: "${destDir}"`);
-        this.outputChannel.appendLine(`[DEBUG] workspaceRoot: "${workspaceRoot}"`);
         let destPath = path.join(destDir, fileName);
         // Apply gap-filling numeric prefix
         const numberedFileName = this.getNumberedFileName(destDir, fileName);
         destPath = path.join(destDir, numberedFileName);
         // STEP 2 — GUARD CHECKS
         if (!workspaceRoot) {
-            this.outputChannel.appendLine('Move aborted: no workspace root found');
+            this.outputChannel.appendLine('[Mover] Error: no workspace root found');
             return false;
         }
         if (!fs.existsSync(signal.filePath)) {
-            this.outputChannel.appendLine(`Move aborted: source not found: ${toRelative(signal.filePath, workspaceRoot)}`);
+            this.outputChannel.appendLine(`[Mover] Error: source file no longer available: ${signal.filePath}`);
             return false;
         }
         // Reject symlinks — moving a symlink target is dangerous
         try {
             const lstat = fs.lstatSync(signal.filePath);
             if (lstat.isSymbolicLink()) {
-                this.outputChannel.appendLine('Move aborted: refusing to move a symbolic link');
+                this.outputChannel.appendLine('[Mover] Skip: refusing to move a symbolic link');
                 return false;
             }
         }
@@ -214,33 +214,40 @@ class FileMover {
         // We must ensure the destination is inside the workspace root
         try {
             if (!fs.existsSync(destDir)) {
+                this.outputChannel.appendLine(`[Mover] Creating directory: ${destDir}`);
                 fs.mkdirSync(destDir, { recursive: true });
             }
-            const realWorkspaceRoot = fs.realpathSync(workspaceRoot).toLowerCase();
-            const realDestPath = path.resolve(destPath).toLowerCase();
-            // On Windows, resolve() can return paths with different drive letters (e.g. C: vs c:)
-            // so we normalize and check start
-            if (!realDestPath.startsWith(realWorkspaceRoot)) {
-                this.outputChannel.appendLine(`Security Alert: Path traversal blocked. Target: ${realDestPath}`);
+            const realWorkspaceRoot = fs.realpathSync(workspaceRoot);
+            const realDestDir = fs.realpathSync(destDir); // dir already created above
+            const realDestPath = path.join(realDestDir, numberedFileName);
+            // Case-insensitive on Windows, case-sensitive on Unix
+            const normalizedWorkspace = realWorkspaceRoot.toLowerCase();
+            const normalizedDest = realDestPath.toLowerCase();
+            this.outputChannel.appendLine(`[Mover] Target canonical path: ${realDestPath}`);
+            if (!normalizedDest.startsWith(normalizedWorkspace + path.sep.toLowerCase())) {
+                this.outputChannel.appendLine(`[Mover] Security: path traversal blocked (Dest outside workspace root) → ${realDestPath}`);
                 return false;
             }
         }
         catch (err) {
-            this.outputChannel.appendLine(`Move aborted: path resolution failed: ${err.message}`);
+            this.outputChannel.appendLine(`[Mover] Exception during path resolution: ${err.message}`);
             return false;
         }
         // STEP 4 — CHECK FOR COLLISION
         if (fs.existsSync(destPath)) {
-            this.outputChannel.appendLine(`File already exists at destination: ${toRelative(destPath, workspaceRoot)}`);
+            this.outputChannel.appendLine(`[Mover] Skip: file already exists at target → ${destPath}`);
             return false;
         }
         // STEP 5 — PERFORM ATOMIC MOVE
+        this.outputChannel.appendLine(`[Mover] Initiating rename: ${path.basename(signal.filePath)} → ${path.basename(destDir)}/`);
         try {
             fs.renameSync(signal.filePath, destPath);
         }
         catch (err) {
+            this.outputChannel.appendLine(`[Mover] Rename failed: ${err.message}`);
             // Fallback for cross-device moves
             if (err.code === 'EXDEV') {
+                this.outputChannel.appendLine('[Mover] Cross-device move detected, using copy/delete fallback.');
                 fs.copyFileSync(signal.filePath, destPath);
                 fs.unlinkSync(signal.filePath);
             }

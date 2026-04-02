@@ -1,6 +1,6 @@
 {
   "name": "nette",
-  "displayName": "Nette",
+  "displayName": "Nette - Smart File Organizer",
   "description": "Automatically organizes DSA practice files into topic folders based on code content: no naming conventions required.",
   "version": "1.0.0",
   "publisher": "YashKaul",
@@ -14,8 +14,8 @@
   },
   "categories": [
     "Other",
-    "Formatters",
-    "Education"
+    "Education",
+    "Programming Languages"
   ],
   "keywords": [
     "dsa",
@@ -27,7 +27,27 @@
     "competitive programming",
     "file organization",
     "productivity",
-    "nette"
+    "nette",
+    "file organizer",
+    "auto sort files",
+    "folder structure",
+    "code organization",
+    "workspace cleaner",
+    "auto file management",
+    "codeforces",
+    "geeksforgeeks",
+    "hackerrank",
+    "gfg",
+    "sorting",
+    "binary search",
+    "greedy",
+    "graphs",
+    "linked lists",
+    "dynamic programming",
+    "memoization",
+    "recursion",
+    "backtracking",
+    "trees"
   ],
   "repository": {
     "type": "git",
@@ -55,6 +75,14 @@
       {
         "command": "nette.undoLast",
         "title": "Nette: Undo Last Move"
+      },
+      {
+        "command": "nette.setApiKey",
+        "title": "Nette: Set Groq API Key"
+      },
+      {
+        "command": "nette.deleteApiKey",
+        "title": "Nette: Delete Groq API Key"
       }
     ],
     "configuration": {
@@ -63,7 +91,7 @@
         "nette.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable or disable Nette Organizer."
+          "description": "Turn Nette on or off. When disabled, files will not be moved or classified."
         },
         "nette.rootDir": {
           "type": "string",
@@ -73,12 +101,7 @@
         "nette.aiEnabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable AI fallback classification using Groq when heuristic confidence is low."
-        },
-        "nette.groqApiKey": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "Your [Groq API key](https://console.groq.com/keys) for AI-powered classification. Free tier is sufficient. Leave empty to use heuristic-only mode."
+          "markdownDescription": "Enable AI fallback using Groq. Run **Nette: Set API Key** command to configure your key securely."
         },
         "nette.debounceDelay": {
           "type": "number",
