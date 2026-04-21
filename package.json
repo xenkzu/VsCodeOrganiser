@@ -95,7 +95,7 @@
         },
         "nette.rootDir": {
           "type": "string",
-          "default": "DSA",
+          "default": ".",
           "description": "Root folder for organized files, relative to workspace. Set to '.' or '' to place files directly in the workspace root with no wrapper folder."
         },
         "nette.aiEnabled": {

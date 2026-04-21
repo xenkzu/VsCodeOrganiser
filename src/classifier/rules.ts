@@ -144,7 +144,7 @@ export async function learnFromUserChoice(
   outputChannel: vscode.OutputChannel
 ): Promise<void> {
   const configPath = path.join(workspaceRoot, 'organizer.json');
-  const rootDir = vscode.workspace.getConfiguration('nette').get<string>('rootDir', 'DSA');
+  const rootDir = vscode.workspace.getConfiguration('nette').get<string>('rootDir', '.');
 
   let config: OrganizerConfig;
   try {

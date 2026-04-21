@@ -20,7 +20,7 @@ export interface ClassificationResult {
   subtopic: string; // e.g. "BinaryTree"
   confidence: number; // 0.0 to 1.0
   source: ClassificationSource;
-  targetPath: string; // e.g. "DSA/Trees/BinaryTree"
+  targetPath: string; // e.g. "Trees/BinaryTree"
   userConfirmationRequired: boolean;
 }
 

@@ -22,9 +22,9 @@ using the `folderMap` field in `organizer.json`.
 }
 ```
 
-If `dsa-organizer.rootDir` is set to `.` or `""`, the mappings are applied
-directly from the workspace root. If prefixing is enabled (e.g., "DSA"),
-the mapped folders will stay inside "DSA/".
+If `nette.rootDir` is set to `.` or `""`, the mappings are applied
+directly from the workspace root. If a root folder is specified (e.g., "Sorted"),
+the mapped folders will stay inside "Sorted/".
 
 ## Priority
 

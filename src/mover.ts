@@ -167,7 +167,7 @@ export class FileMover {
 
     const rawRootDir = vscode.workspace
       .getConfiguration('nette')
-      .get<string>('rootDir', 'DSA');
+      .get<string>('rootDir', '.');
 
     const useRootDir = rawRootDir &&
       rawRootDir.trim() !== '' &&

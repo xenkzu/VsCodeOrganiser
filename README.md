@@ -42,23 +42,22 @@ workspace/
 **After Nette:**
 ```
 workspace/
-└── DSA/
-    ├── Trees/
-    │   └── BinaryTree/
-    │       └── 0_solution.py
-    ├── Graphs/
-    │   └── DFS/
-    │       └── 0_try2.cpp
-    ├── DynamicProgramming/
-    │   └── Tabulation/
-    │       └── 0_test_again.java
-    └── Basic/
-        └── 0_asdf.cpp
+├── Trees/
+│   └── BinaryTree/
+│       └── 0_solution.py
+├── Graphs/
+│   └── DFS/
+│       └── 0_try2.cpp
+├── DynamicProgramming/
+│   └── Tabulation/
+│       └── 0_test_again.java
+└── Basic/
+    └── 0_asdf.cpp
 ```
 
 Same files. Automatically sorted. You never touched the file names.
 
-A file called `0_basic.py` containing a `TreeNode` class goes to `DSA/Trees/BinaryTree/`. A file called `asdf.cpp` with a `dfs` method and a `visited` array goes to `DSA/Graphs/DFS/`. The auto file organizer reads the code, not the name.
+A file called `0_basic.py` containing a `TreeNode` class goes to `Trees/BinaryTree/`. A file called `asdf.cpp` with a `dfs` method and a `visited` array goes to `Graphs/DFS/`. The auto file organizer reads the code, not the name.
 
 ## Features
 - **Moves files by content, not name** — it doesn't matter what you called the file. Nette reads the code inside it.
@@ -106,7 +105,7 @@ Settings are under **File → Preferences → Settings → Nette**.
 | Setting | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `nette.enabled` | boolean | `true` | Turn Nette on or off |
-| `nette.rootDir` | string | `"DSA"` | Root folder for organized files, relative to workspace root. Set to "." to place files directly in the workspace |
+| `nette.rootDir` | string | `"."` | Root folder for organized files, relative to workspace root. Set to "." to place files directly in the workspace |
 | `nette.confidenceThreshold` | number | `0.55` | How confident Nette needs to be before moving without asking. Lower = more aggressive, higher = more cautious |
 | `nette.aiEnabled` | boolean | `true` | Enable Groq AI fallback for files the pattern matcher can't place |
 | `nette.debounceDelay` | number | `900` | Milliseconds to wait after a save before classifying. Increase if files are being processed twice |

@@ -98,7 +98,7 @@ export class FileWatcher extends vscode.Disposable {
     }
 
     const config = vscode.workspace.getConfiguration('nette');
-    const rootDir = config.get<string>('rootDir', 'DSA');
+    const rootDir = config.get<string>('rootDir', '.');
     
     // Check if path is inside rootDir
     if (normalizedPath.includes(`/${rootDir}/`)) {
