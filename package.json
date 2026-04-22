@@ -2,7 +2,7 @@
   "name": "nette",
   "displayName": "Nette - Smart File Organizer",
   "description": "Automatically organizes DSA practice files into topic folders based on code content: no naming conventions required.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "YashKaul",
   "icon": "assets/icon.png",
   "galleryBanner": {
@@ -74,7 +74,8 @@
       },
       {
         "command": "nette.undoLast",
-        "title": "Nette: Undo Last Move"
+        "title": "Nette: Undo Last Move",
+        "icon": "$(discard)"
       },
       {
         "command": "nette.setApiKey",
@@ -83,8 +84,53 @@
       {
         "command": "nette.deleteApiKey",
         "title": "Nette: Delete Groq API Key"
+      },
+      {
+        "command": "nette.ignoreFile",
+        "title": "Nette: Ignore This File"
+      },
+      {
+        "command": "nette.unignoreFile",
+        "title": "Nette: Unignore This File"
       }
     ],
+    "views": {
+      "explorer": [
+        {
+          "id": "netteHistory",
+          "name": "Nette Move History",
+          "icon": "$(history)",
+          "contextualTitle": "Nette"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "netteHistory",
+        "contents": "No moves yet.\nSave a DSA file to see it organized here."
+      }
+    ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "nette.undoLast",
+          "when": "view == netteHistory && viewItem == historyItem",
+          "group": "inline"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "nette.ignoreFile",
+          "group": "nette@1",
+          "when": "!nette:isIgnored"
+        },
+        {
+          "command": "nette.unignoreFile",
+          "group": "nette@1",
+          "when": "nette:isIgnored"
+        }
+      ]
+    },
     "configuration": {
       "title": "Nette Organizer",
       "properties": {
@@ -97,6 +143,14 @@
           "type": "string",
           "default": ".",
           "description": "Root folder for organized files, relative to workspace. Set to '.' or '' to place files directly in the workspace root with no wrapper folder."
+        },
+        "nette.ignoredFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "List of file paths (relative to workspace root) that Nette will never move. Managed automatically via right-click menu."
         },
         "nette.aiEnabled": {
           "type": "boolean",

@@ -1,1 +1,23 @@
-node_modules
+# Dependencies
+node_modules/
+
+# Build artifacts
+out/
+dist/
+*.vsix
+
+# VS Code test data
+.vscode-test/
+
+# Environment and Secrets
+.env
+*.key
+*.pem
+
+# Local history/config
+.dsa-organizer/
+history.json
+
+# OS files
+.DS_Store
+Thumbs.db

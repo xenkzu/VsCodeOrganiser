@@ -7,11 +7,20 @@ import { initSecretStorage } from './classifier/ai';
 import { mergeResults } from './merger';
 import { FileMover } from './mover';
 import { OrganizerConfig } from './types';
+import { HistoryProvider } from './historyProvider';
 
 function toRelative(absolutePath: string, workspaceRoot: string): string {
     const rel = path.relative(workspaceRoot, absolutePath);
     // If relative path escapes workspace, return just the filename
     return rel.startsWith('..') ? path.basename(absolutePath) : rel;
+}
+
+function isIgnored(filePath: string, workspaceRoot: string): boolean {
+    const ignoredFiles = vscode.workspace
+        .getConfiguration('nette')
+        .get<string[]>('ignoredFiles', []);
+    const relative = path.relative(workspaceRoot, filePath).replace(/\\/g, '/');
+    return ignoredFiles.some(p => p.replace(/\\/g, '/') === relative);
 }
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -47,12 +56,51 @@ export async function activate(context: vscode.ExtensionContext) {
             await context.secrets.delete('nette.groqApiKey');
             vscode.window.showInformationMessage('Nette: Groq API key deleted from secure storage.');
             outputChannel.appendLine('[Nette] API key deleted from SecretStorage.');
+        }),
+        vscode.commands.registerCommand('nette.ignoreFile', async (uri: vscode.Uri) => {
+            const target = uri?.fsPath ?? vscode.window.activeTextEditor?.document.uri.fsPath;
+            if (!target) { return; }
+            const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+            const relative = path.relative(workspaceRoot, target).replace(/\\/g, '/');
+            const config = vscode.workspace.getConfiguration('nette');
+            const current = config.get<string[]>('ignoredFiles', []);
+            if (!current.includes(relative)) {
+                await config.update(
+                    'ignoredFiles',
+                    [...current, relative],
+                    vscode.ConfigurationTarget.Workspace
+                );
+                vscode.window.showInformationMessage(`Nette: "${path.basename(target)}" will no longer be moved.`);
+            }
+        }),
+        vscode.commands.registerCommand('nette.unignoreFile', async (uri: vscode.Uri) => {
+            const target = uri?.fsPath ?? vscode.window.activeTextEditor?.document.uri.fsPath;
+            if (!target) { return; }
+            const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+            const relative = path.relative(workspaceRoot, target).replace(/\\/g, '/');
+            const config = vscode.workspace.getConfiguration('nette');
+            const current = config.get<string[]>('ignoredFiles', []);
+            await config.update(
+                'ignoredFiles',
+                current.filter(p => p !== relative),
+                vscode.ConfigurationTarget.Workspace
+            );
+            vscode.window.showInformationMessage(`Nette: "${path.basename(target)}" will be organized again.`);
         })
     );
 
     // 3. Then instantiate mover (which registers its own commands)
     const mover = new FileMover(context, outputChannel);
     context.subscriptions.push(mover);
+
+    const historyProvider = new HistoryProvider();
+    vscode.window.registerTreeDataProvider('netteHistory', historyProvider);
+
+    // Register undo specific command
+    vscode.commands.registerCommand('nette.undoSpecific', async (index: number) => {
+        await mover.undoAtIndex(index);
+        historyProvider.refresh(mover.getHistory());
+    });
 
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
 
@@ -74,6 +122,11 @@ export async function activate(context: vscode.ExtensionContext) {
     // 4. Instantiate the FileWatcher
     const watcher = new FileWatcher(context, outputChannel, async (signal) => {
         try {
+            if (isIgnored(signal.filePath, workspaceRoot)) {
+                outputChannel.appendLine(`[Nette] Skipping ignored file: ${path.basename(signal.filePath)}`);
+                return;
+            }
+
             outputChannel.appendLine(`── Signal captured: ${toRelative(signal.filePath, workspaceRoot)} ──`);
 
             // Step 1: heuristic
@@ -133,6 +186,7 @@ export async function activate(context: vscode.ExtensionContext) {
             }
 
             await mover.move(signal, merged, organizerConfig);
+            historyProvider.refresh(mover.getHistory());
         } catch (err: any) {
             outputChannel.appendLine(`[Nette Error] Pipeline failed: ${err.message}`);
             if (err.stack) {

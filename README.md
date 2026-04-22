@@ -2,7 +2,7 @@
 
 > Save a DSA file. It's already sorted. You didn't do anything.
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.1.0-blue)
 ![VS Code](https://img.shields.io/badge/vscode-%5E1.85.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -25,6 +25,14 @@ workspace/
 Six files. Zero organization. Which one has your binary tree? Which one is the sliding window attempt? You have no idea without opening each one.
 
 Renaming as you go sounds fine until you're mid-problem and the last thing you want to do is think about folder structure. So you don't. The mess stays.
+
+## ChangeLog
+
+### [1.1.0] - 2026-04-22
+- **Move History**: Added a sidebar panel to track all organized files with one-click undo.
+- **Ignore List**: Right-click any file to add it to the ignore list so Nette never touches it.
+- **Root Default**: The default organization directory is now the workspace root (`.`).
+
 
 ## What Nette does
 

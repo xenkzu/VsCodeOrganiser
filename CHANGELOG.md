@@ -4,6 +4,13 @@ All notable changes to Nette are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-04-22
+
+### Added
+- **Move History Sidebar**: A dedicated view in the Explorer to see and undo all recent file movements.
+- **Ignore File System**: Support for ignoring specific files via the context menu, allowing users to exclude non-DSA files from being organized.
+- **Default Root Directory**: Updated the default `nette.rootDir` to `.` so files are organized directly in the workspace root by default.
+
 ## [1.0.0] - 2026-04-01
 
 ### Added

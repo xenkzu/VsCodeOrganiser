@@ -104,6 +104,25 @@ export class FileMover {
     }, 3000);
   }
 
+  private async swapTab(closePath: string, openPath: string): Promise<void> {
+    try {
+      for (const tabGroup of vscode.window.tabGroups.all) {
+        for (const tab of tabGroup.tabs) {
+          if (
+            tab.input instanceof vscode.TabInputText &&
+            tab.input.uri.fsPath.toLowerCase() === closePath.toLowerCase()
+          ) {
+            await vscode.window.tabGroups.close(tab);
+          }
+        }
+      }
+      const doc = await vscode.workspace.openTextDocument(openPath);
+      await vscode.window.showTextDocument(doc, { preview: false });
+    } catch (err: any) {
+      this.outputChannel.appendLine(`Tab management warning: ${err.message}`);
+    }
+  }
+
   private getNumberedFileName(
     destDir: string,
     fileName: string
@@ -310,23 +329,9 @@ export class FileMover {
     }, 10000);
 
     // STEP 9 — TAB MANAGEMENT
-    // VS Code's editor still points to the old path (strikethrough or error).
-    // Close the old tab and open the new one.
-    try {
-      for (const tabGroup of vscode.window.tabGroups.all) {
-        for (const tab of tabGroup.tabs) {
-          if (tab.input instanceof vscode.TabInputText &&
-            tab.input.uri.fsPath.toLowerCase() === signal.filePath.toLowerCase()) {
-            await vscode.window.tabGroups.close(tab);
-          }
-        }
-      }
-      // Re-open at new path
-      const doc = await vscode.workspace.openTextDocument(destPath);
-      await vscode.window.showTextDocument(doc, { preview: false });
-    } catch (err: any) {
-      this.outputChannel.appendLine(`Tab management warning: ${err.message}`);
-    }
+    await this.swapTab(signal.filePath, destPath);
+
+    this.outputChannel.appendLine(`Successfully moved: ${path.basename(signal.filePath)} → ${path.basename(path.dirname(destPath))}/`);
 
     this.outputChannel.appendLine(`Successfully moved: ${path.basename(signal.filePath)} → ${path.basename(path.dirname(destPath))}/`);
     return true;
@@ -346,7 +351,37 @@ export class FileMover {
       }
 
       fs.renameSync(record.newPath, record.originalPath);
+      await this.swapTab(record.newPath, record.originalPath);
       this.outputChannel.appendLine(`Undo successful: Moved back to ${record.originalPath}`);
+      this.notifyItem.hide();
+      return true;
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Undo failed: ${err.message}`);
+      return false;
+    }
+  }
+
+  public getHistory(): MoveRecord[] {
+    return [...this.undoStack];
+  }
+
+  public async undoAtIndex(displayIndex: number): Promise<boolean> {
+    // displayIndex is from reversed array — convert to undoStack index
+    const stackIndex = this.undoStack.length - 1 - displayIndex;
+    const record = this.undoStack[stackIndex];
+    if (!record) {
+      vscode.window.showInformationMessage('Nette: Move record not found.');
+      return false;
+    }
+    try {
+      const destDir = path.dirname(record.originalPath);
+      if (!fs.existsSync(destDir)) {
+        fs.mkdirSync(destDir, { recursive: true });
+      }
+      fs.renameSync(record.newPath, record.originalPath);
+      await this.swapTab(record.newPath, record.originalPath);
+      this.undoStack.splice(stackIndex, 1);
+      this.outputChannel.appendLine(`Undo: ${path.basename(record.newPath)} restored.`);
       this.notifyItem.hide();
       return true;
     } catch (err: any) {
